@@ -115,7 +115,7 @@ const ELITE_AFFIXES = {
     id: "armor",
     name: "厚甲",
     apply(enemy) {
-      enemy.maxHealth *= 1.75;
+      enemy.maxHealth *= 1.45;
       enemy.health = enemy.maxHealth;
       enemy.color = "#4f6aa3";
     },
@@ -136,6 +136,13 @@ const ELITE_AFFIXES = {
       enemy.color = "#8f355f";
     },
   },
+};
+
+const ELITE_AFFIX_LABELS = {
+  rage: "狂暴",
+  armor: "厚甲",
+  burst: "爆裂",
+  leech: "吸血",
 };
 
 function createUpgradeDefinitions() {
@@ -525,7 +532,8 @@ function applyEliteAffix(enemy, affixId) {
   affix.apply(enemy);
   enemy.isElite = true;
   enemy.eliteAffix = affixId;
-  enemy.maxHealth *= 1.35;
+  // Lower elite bulk so they still feel threatening but clearly killable.
+  enemy.maxHealth *= 1.18;
   enemy.health = enemy.maxHealth;
   enemy.score *= 2.2;
   enemy.xp *= 2;
@@ -534,11 +542,12 @@ function applyEliteAffix(enemy, affixId) {
 
 function createBoss(x, y) {
   const elapsedMinutes = Math.floor(gameState.elapsedTime / 60);
-  const scale = 1 + elapsedMinutes * 0.18;
+  // Front-load accessibility: early bosses are less tanky, then scale steadily.
+  const scale = 1 + elapsedMinutes * 0.13;
   const boss = createEnemy("tank", x, y);
   boss.isBoss = true;
   boss.radius = 30;
-  boss.maxHealth = 520 * scale;
+  boss.maxHealth = 360 * scale;
   boss.health = boss.maxHealth;
   boss.speed = 72 + elapsedMinutes * 4;
   boss.damage = 22 + elapsedMinutes * 2;
@@ -549,6 +558,13 @@ function createBoss(x, y) {
   boss.bossSkillCooldown = 4.2;
   boss.bossSummonCooldown = 7.4;
   return boss;
+}
+
+function getEnemyTitle(enemy) {
+  if (enemy.isBoss) return "首領";
+  if (!enemy.isElite) return "";
+  const affixLabel = ELITE_AFFIX_LABELS[enemy.eliteAffix] || "精英";
+  return `精英・${affixLabel}`;
 }
 
 function getSpawnProfile(elapsed) {
@@ -1336,11 +1352,27 @@ function drawEnemy(enemy) {
   }
 
   const barWidth = enemy.radius * 2.08;
-  const ratio = enemy.health / enemy.maxHealth;
+  const ratio = clamp(enemy.health / enemy.maxHealth, 0, 1);
   ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
   ctx.fillRect(enemy.x - barWidth / 2, enemy.y - enemy.radius - 12, barWidth, 5);
   ctx.fillStyle = enemy.isBoss ? "#ffd26c" : "#9fcb74";
   ctx.fillRect(enemy.x - barWidth / 2, enemy.y - enemy.radius - 12, barWidth * ratio, 5);
+
+  // Border enemies (elite/boss) show explicit title + HP for better kill feedback.
+  if (enemy.isElite || enemy.isBoss) {
+    const title = getEnemyTitle(enemy);
+    const hpText = `${Math.max(0, Math.ceil(enemy.health))}/${Math.ceil(enemy.maxHealth)}`;
+    const label = `${title}  ${hpText}`;
+    const y = enemy.y - enemy.radius - 17;
+    ctx.font = enemy.isBoss ? "bold 12px sans-serif" : "11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    const labelWidth = ctx.measureText(label).width;
+    ctx.fillStyle = "rgba(8, 10, 9, 0.62)";
+    ctx.fillRect(enemy.x - labelWidth / 2 - 4, y - 13, labelWidth + 8, 14);
+    ctx.fillStyle = enemy.isBoss ? "#ffe08a" : "#c5e9ff";
+    ctx.fillText(label, enemy.x, y - 2);
+  }
   ctx.restore();
 }
 
