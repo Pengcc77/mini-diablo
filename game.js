@@ -279,6 +279,7 @@ const input = {
 
 const touchState = {
   joystickPointerId: null,
+  joystickTouchId: null,
 };
 
 let gameState;
@@ -1432,6 +1433,7 @@ function releaseJoystick() {
   input.joystickX = 0;
   input.joystickY = 0;
   touchState.joystickPointerId = null;
+  touchState.joystickTouchId = null;
   joystickBase.classList.remove("is-active");
   joystickThumb.style.transform = "translate(-50%, -50%)";
 }
@@ -1444,9 +1446,6 @@ function setupTouchControls() {
     if (touchState.joystickPointerId !== null) return;
     touchState.joystickPointerId = event.pointerId;
     joystickBase.classList.add("is-active");
-    if (typeof joystickArea.setPointerCapture === "function") {
-      joystickArea.setPointerCapture(event.pointerId);
-    }
     updateJoystickFromPointer(event.clientX, event.clientY);
   });
 
@@ -1466,49 +1465,61 @@ function setupTouchControls() {
   joystickArea.addEventListener("pointercancel", endJoystickPointer);
   joystickArea.addEventListener("lostpointercapture", releaseJoystick);
 
-  // iOS / embedded browser compatibility: keep joystick working even without Pointer Events.
-  if (!window.PointerEvent) {
-    joystickArea.addEventListener(
-      "touchstart",
-      (event) => {
-        event.preventDefault();
-        const touch = event.changedTouches[0];
-        if (!touch) return;
-        joystickBase.classList.add("is-active");
-        updateJoystickFromTouch(touch);
-      },
-      { passive: false }
-    );
+  // iOS / embedded browser compatibility:
+  // Always bind touch events as a fallback because some browsers expose PointerEvent
+  // but still behave inconsistently for virtual joystick dragging.
+  joystickArea.addEventListener(
+    "touchstart",
+    (event) => {
+      event.preventDefault();
+      if (touchState.joystickTouchId !== null) return;
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      touchState.joystickTouchId = touch.identifier;
+      joystickBase.classList.add("is-active");
+      updateJoystickFromTouch(touch);
+    },
+    { passive: false }
+  );
 
-    joystickArea.addEventListener(
-      "touchmove",
-      (event) => {
-        event.preventDefault();
-        const touch = event.changedTouches[0];
-        if (!touch) return;
-        updateJoystickFromTouch(touch);
-      },
-      { passive: false }
-    );
+  joystickArea.addEventListener(
+    "touchmove",
+    (event) => {
+      event.preventDefault();
+      const tracked = Array.from(event.changedTouches).find(
+        (t) => t.identifier === touchState.joystickTouchId
+      );
+      if (!tracked) return;
+      updateJoystickFromTouch(tracked);
+    },
+    { passive: false }
+  );
 
-    joystickArea.addEventListener(
-      "touchend",
-      (event) => {
-        event.preventDefault();
-        releaseJoystick();
-      },
-      { passive: false }
-    );
+  joystickArea.addEventListener(
+    "touchend",
+    (event) => {
+      event.preventDefault();
+      const tracked = Array.from(event.changedTouches).some(
+        (t) => t.identifier === touchState.joystickTouchId
+      );
+      if (!tracked) return;
+      releaseJoystick();
+    },
+    { passive: false }
+  );
 
-    joystickArea.addEventListener(
-      "touchcancel",
-      (event) => {
-        event.preventDefault();
-        releaseJoystick();
-      },
-      { passive: false }
-    );
-  }
+  joystickArea.addEventListener(
+    "touchcancel",
+    (event) => {
+      event.preventDefault();
+      const tracked = Array.from(event.changedTouches).some(
+        (t) => t.identifier === touchState.joystickTouchId
+      );
+      if (!tracked) return;
+      releaseJoystick();
+    },
+    { passive: false }
+  );
 
   arenaFrame.addEventListener(
     "touchmove",
