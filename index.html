@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Minimal Darklike Prototype</title>
+  <title>Mini Diablo Survivor</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="game-shell">
-    <header class="hud">
+    <header id="gameHud" class="hud">
       <div class="hud-top">
         <div class="hud-stat">
           <span class="hud-label">LV</span>
@@ -16,7 +16,7 @@
         </div>
         <div class="hud-stat">
           <span class="hud-label">HP</span>
-          <span id="hpValue">100 / 100</span>
+          <span id="hpValue">130 / 130</span>
         </div>
         <div class="hud-stat">
           <span class="hud-label">SCORE</span>
@@ -24,20 +24,29 @@
         </div>
       </div>
 
-      <div class="hud-exp">
-        <div class="xp-meta">
-          <span id="xpValue">0 / 20</span>
-          <span class="desktop-hint">WASD Move / Space Attack</span>
-          <span class="mobile-hint">Move / Attack</span>
+      <div class="hud-bottom">
+        <div class="hud-mini">
+          <span id="timeValue">00:00</span>
+          <span class="hud-dot"></span>
+          <span id="killsValue">K 0</span>
+          <span class="hud-dot"></span>
+          <span id="phaseValue">Phase 1</span>
         </div>
-        <div class="xp-bar">
-          <div id="xpFill" class="xp-fill"></div>
+        <div class="xp-row">
+          <span id="xpValue">0 / 14</span>
+          <div class="xp-bar">
+            <div id="xpFill" class="xp-fill"></div>
+          </div>
         </div>
       </div>
     </header>
 
     <section class="arena-frame" id="arenaFrame">
-      <canvas id="gameCanvas" width="960" height="540" aria-label="2D darklike game"></canvas>
+      <canvas id="gameCanvas" width="960" height="540" aria-label="2D survivor game"></canvas>
+
+      <div id="mobileHint" class="mobile-hint-overlay">
+        Drag to move / Auto attack
+      </div>
 
       <div class="mobile-controls" aria-hidden="true">
         <div id="joystickArea" class="joystick-area">
@@ -46,23 +55,24 @@
           </div>
         </div>
 
-        <button id="attackButton" class="attack-button" type="button" aria-label="Attack">
-          Attack
-        </button>
+        <button id="attackButton" class="skill-button" type="button" aria-label="Skill button"></button>
       </div>
 
       <div id="gameOverPanel" class="overlay hidden">
         <div class="overlay-card">
           <h1>Game Over</h1>
-          <p id="finalScore">Final Score: 0</p>
-          <button id="restartButton" type="button">Restart</button>
+          <p id="finalLevel">Level: 1</p>
+          <p id="finalScore">Score: 0</p>
+          <p id="finalTime">Survival: 00:00</p>
+          <p id="finalKills">Kills: 0</p>
+          <button id="restartButton" type="button">再來一局</button>
         </div>
       </div>
 
       <div id="levelUpPanel" class="overlay hidden">
         <div class="overlay-card overlay-card-large">
           <h1>Level Up</h1>
-          <p>Choose one upgrade and continue the run.</p>
+          <p>選擇一個強化效果</p>
           <div id="upgradeOptions" class="upgrade-grid"></div>
         </div>
       </div>
