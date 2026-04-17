@@ -1069,8 +1069,10 @@ function updateEnemies(deltaTime) {
     enemy.y += ((dy / len) * enemy.speed + enemy.knockbackY) * deltaTime;
     enemy.x = clamp(enemy.x, enemy.radius, WORLD.width - enemy.radius);
     enemy.y = clamp(enemy.y, enemy.radius, WORLD.height - enemy.radius);
-    resolvePlayerEnemyOverlap(player, enemy);
 
+    // Damage should be checked before separation.
+    // If we separate first, distance is always forced outside contact range
+    // and the player would never take collision damage.
     const touching = distanceBetween(enemy, player) < enemy.radius + player.radius;
     if (touching && player.damageCooldownTimer <= 0) {
       player.health = Math.max(0, player.health - enemy.damage);
@@ -1079,6 +1081,8 @@ function updateEnemies(deltaTime) {
         enemy.health = Math.min(enemy.maxHealth, enemy.health + enemy.damage * enemy.lifeStealRatio);
       }
     }
+
+    resolvePlayerEnemyOverlap(player, enemy);
   }
 }
 
