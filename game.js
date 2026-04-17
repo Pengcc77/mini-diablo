@@ -148,10 +148,14 @@ const BALANCE = {
     bossDeathBurstParticles: 16,
     playerHitVibrateMs: 18,
     bossDeathVibrateMs: 75,
+    mobileFxScale: 1.28,
   },
 };
 const DEBUG_QUERY_ENABLED =
   typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "1";
+const IS_MOBILE_DEVICE =
+  typeof window !== "undefined" &&
+  window.matchMedia("(pointer: coarse), (max-width: 720px)").matches;
 
 const CONFIG = {
   basePlayerSpeed: 240,
@@ -441,7 +445,9 @@ function shuffleArray(items) {
 
 function vibrateIfSupported(pattern) {
   if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
-  navigator.vibrate(pattern);
+  const output =
+    typeof pattern === "number" && IS_MOBILE_DEVICE ? Math.round(pattern * 1.15) : pattern;
+  navigator.vibrate(output);
 }
 
 function spawnDamageText(x, y, value, { isCrit = false } = {}) {
@@ -449,15 +455,17 @@ function spawnDamageText(x, y, value, { isCrit = false } = {}) {
   const activeTextCount = gameState.effects.filter((fx) => fx.type === "damageText").length;
   if (activeTextCount >= BALANCE.feedback.damageTextMaxCount) return;
 
+  const mobileScale = IS_MOBILE_DEVICE ? BALANCE.feedback.mobileFxScale : 1;
+  const life = BALANCE.feedback.damageTextLife * (IS_MOBILE_DEVICE ? 1.25 : 1);
   gameState.effects.push({
     type: "damageText",
     x,
     y,
-    vx: randomRange(-18, 18),
-    vy: isCrit ? -72 : -54,
-    radius: isCrit ? 1.18 : 1,
-    life: BALANCE.feedback.damageTextLife,
-    maxLife: BALANCE.feedback.damageTextLife,
+    vx: randomRange(-18, 18) * mobileScale,
+    vy: (isCrit ? -72 : -54) * mobileScale,
+    radius: (isCrit ? 1.18 : 1) * mobileScale,
+    life,
+    maxLife: life,
     color: isCrit ? "#ffd36e" : "#f1f6e5",
     text: isCrit ? `CRIT ${Math.round(value)}` : `${Math.round(value)}`,
   });
@@ -465,7 +473,8 @@ function spawnDamageText(x, y, value, { isCrit = false } = {}) {
 
 function addScreenShake(amount) {
   if (!gameState) return;
-  gameState.screenShake = Math.min(8, (gameState.screenShake || 0) + amount);
+  const scaled = amount * (IS_MOBILE_DEVICE ? 1.25 : 1);
+  gameState.screenShake = Math.min(9.5, (gameState.screenShake || 0) + scaled);
 }
 
 function pushAnnouncement(text, life = BALANCE.feedback.bossIntroLife, color = "#ffe08a") {
@@ -1735,10 +1744,14 @@ function drawEffects() {
       ctx.fill();
     } else if (fx.type === "damageText") {
       const scale = fx.radius || 1;
+      const baseFont = IS_MOBILE_DEVICE ? 14 : 12;
       ctx.fillStyle = fx.color || "#f1f6e5";
-      ctx.font = `${Math.floor(12 * scale)}px "Segoe UI", sans-serif`;
+      ctx.font = `${Math.floor(baseFont * scale)}px "Segoe UI", sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      ctx.strokeStyle = "rgba(8, 10, 9, 0.55)";
+      ctx.lineWidth = 3;
+      ctx.strokeText(fx.text || "0", fx.x, fx.y);
       ctx.fillText(fx.text || "0", fx.x, fx.y);
     } else if (fx.type === "shockwave") {
       ctx.strokeStyle = fx.color;
@@ -1801,13 +1814,13 @@ function drawAnnouncements() {
   if (!gameState.announcements || gameState.announcements.length === 0) return;
   const top = gameState.announcements[0];
   const alpha = clamp(top.life / top.maxLife, 0, 1);
-  const y = 44 + (1 - alpha) * 8;
+  const y = (IS_MOBILE_DEVICE ? 26 : 44) + (1 - alpha) * 8;
 
   ctx.save();
   ctx.globalAlpha = Math.min(1, alpha * 1.2);
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  ctx.font = "bold 20px 'Segoe UI', sans-serif";
+  ctx.font = `bold ${IS_MOBILE_DEVICE ? 18 : 20}px 'Segoe UI', sans-serif`;
   const label = top.text;
   const width = ctx.measureText(label).width;
   ctx.fillStyle = "rgba(8, 10, 9, 0.62)";
