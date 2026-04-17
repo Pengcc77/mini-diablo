@@ -1423,6 +1423,11 @@ function updateJoystickFromPointer(clientX, clientY) {
   joystickThumb.style.transform = `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px))`;
 }
 
+// Touch fallback for mobile browsers/webviews where Pointer Events are limited.
+function updateJoystickFromTouch(touch) {
+  updateJoystickFromPointer(touch.clientX, touch.clientY);
+}
+
 function releaseJoystick() {
   input.joystickX = 0;
   input.joystickY = 0;
@@ -1432,12 +1437,16 @@ function releaseJoystick() {
 }
 
 function setupTouchControls() {
+  if (!joystickArea || !joystickBase || !joystickThumb) return;
+
   joystickArea.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     if (touchState.joystickPointerId !== null) return;
     touchState.joystickPointerId = event.pointerId;
     joystickBase.classList.add("is-active");
-    joystickArea.setPointerCapture(event.pointerId);
+    if (typeof joystickArea.setPointerCapture === "function") {
+      joystickArea.setPointerCapture(event.pointerId);
+    }
     updateJoystickFromPointer(event.clientX, event.clientY);
   });
 
@@ -1456,6 +1465,50 @@ function setupTouchControls() {
   joystickArea.addEventListener("pointerup", endJoystickPointer);
   joystickArea.addEventListener("pointercancel", endJoystickPointer);
   joystickArea.addEventListener("lostpointercapture", releaseJoystick);
+
+  // iOS / embedded browser compatibility: keep joystick working even without Pointer Events.
+  if (!window.PointerEvent) {
+    joystickArea.addEventListener(
+      "touchstart",
+      (event) => {
+        event.preventDefault();
+        const touch = event.changedTouches[0];
+        if (!touch) return;
+        joystickBase.classList.add("is-active");
+        updateJoystickFromTouch(touch);
+      },
+      { passive: false }
+    );
+
+    joystickArea.addEventListener(
+      "touchmove",
+      (event) => {
+        event.preventDefault();
+        const touch = event.changedTouches[0];
+        if (!touch) return;
+        updateJoystickFromTouch(touch);
+      },
+      { passive: false }
+    );
+
+    joystickArea.addEventListener(
+      "touchend",
+      (event) => {
+        event.preventDefault();
+        releaseJoystick();
+      },
+      { passive: false }
+    );
+
+    joystickArea.addEventListener(
+      "touchcancel",
+      (event) => {
+        event.preventDefault();
+        releaseJoystick();
+      },
+      { passive: false }
+    );
+  }
 
   arenaFrame.addEventListener(
     "touchmove",
