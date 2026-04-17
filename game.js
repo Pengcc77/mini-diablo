@@ -1044,7 +1044,8 @@ function resolvePlayerEnemyOverlap(player, enemy) {
 
   const nx = dx / dist;
   const ny = dy / dist;
-  const separation = minDistance - dist + 0.1;
+  // Keep a tiny gap only, so collision damage can still trigger naturally.
+  const separation = minDistance - dist + 0.01;
   enemy.x += nx * separation;
   enemy.y += ny * separation;
   enemy.x = clamp(enemy.x, enemy.radius, WORLD.width - enemy.radius);
@@ -1073,7 +1074,9 @@ function updateEnemies(deltaTime) {
     // Damage should be checked before separation.
     // If we separate first, distance is always forced outside contact range
     // and the player would never take collision damage.
-    const touching = distanceBetween(enemy, player) < enemy.radius + player.radius;
+    // Add a small contact buffer so "edge-touch" still counts as damage.
+    const contactDistance = enemy.radius + player.radius + 1.2;
+    const touching = distanceBetween(enemy, player) <= contactDistance;
     if (touching && player.damageCooldownTimer <= 0) {
       player.health = Math.max(0, player.health - enemy.damage);
       player.damageCooldownTimer = CONFIG.playerInvulnerabilityDuration;
