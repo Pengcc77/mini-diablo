@@ -55,6 +55,22 @@ body {
 .hud.low-hp {
   border-color: rgba(229, 107, 99, 0.7);
   box-shadow: 0 0 0 1px rgba(229, 107, 99, 0.38), 0 16px 52px rgba(229, 107, 99, 0.2);
+  animation: hudDangerPulse 650ms ease-in-out infinite;
+}
+
+@keyframes hudDangerPulse {
+  0% {
+    transform: translateY(0);
+    filter: brightness(1);
+  }
+  50% {
+    transform: translateY(-1px);
+    filter: brightness(1.08);
+  }
+  100% {
+    transform: translateY(0);
+    filter: brightness(1);
+  }
 }
 
 .hud-top {
@@ -273,6 +289,25 @@ canvas {
 
 .overlay.hidden {
   display: none;
+}
+
+#levelUpPanel.levelup-flash .overlay-card-large {
+  animation: levelUpCardPulse 360ms ease-out;
+}
+
+@keyframes levelUpCardPulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 rgba(216, 243, 161, 0);
+  }
+  45% {
+    transform: scale(1.02);
+    box-shadow: 0 0 40px rgba(216, 243, 161, 0.45);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: var(--shadow);
+  }
 }
 
 .overlay-card {

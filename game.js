@@ -92,34 +92,34 @@ const BALANCE = {
     lateRampDuration: 180,
     early: {
       intervalStart: 2.0,
-      intervalEnd: 1.62,
+      intervalEnd: 1.68,
       weights: { normal: 0.97, swift: 0.03, tank: 0 },
       extraSpawnStart: 0,
-      extraSpawnEnd: 0.04,
+      extraSpawnEnd: 0.03,
       eliteStart: 0.006,
       eliteEnd: 0.018,
     },
     mid: {
-      intervalStart: 1.56,
-      intervalEnd: 1.22,
+      intervalStart: 1.62,
+      intervalEnd: 1.28,
       weightsStart: { normal: 0.85, swift: 0.13, tank: 0.02 },
       weightsEnd: { normal: 0.7, swift: 0.22, tank: 0.08 },
-      extraSpawnStart: 0.06,
-      extraSpawnEnd: 0.15,
+      extraSpawnStart: 0.04,
+      extraSpawnEnd: 0.12,
       eliteStart: 0.022,
       eliteEnd: 0.05,
     },
     late: {
-      intervalStart: 1.2,
-      intervalEnd: 0.94,
+      intervalStart: 1.24,
+      intervalEnd: 1.0,
       weightsStart: { normal: 0.62, swift: 0.24, tank: 0.14 },
       weightsEnd: { normal: 0.53, swift: 0.28, tank: 0.19 },
-      extraSpawnStart: 0.17,
-      extraSpawnEnd: 0.29,
+      extraSpawnStart: 0.15,
+      extraSpawnEnd: 0.25,
       eliteStart: 0.055,
       eliteEnd: 0.1,
     },
-    maxEnemiesBase: 16,
+    maxEnemiesBase: 15,
     maxEnemiesPerMinute: 2,
     maxEnemiesCap: 34,
     safeDistance: 210,
@@ -134,6 +134,20 @@ const BALANCE = {
   debug: {
     // Toggle debug with F3.
     defaultEnabled: false,
+  },
+  feedback: {
+    damageTextLife: 0.46,
+    damageTextMaxCount: 42,
+    normalHitShake: 0.8,
+    eliteHitShake: 1.8,
+    bossHitShake: 2.8,
+    critShakeBonus: 1.8,
+    bossIntroLife: 1.35,
+    levelUpPulseLife: 0.36,
+    lowHpPulseThreshold: 0.3,
+    bossDeathBurstParticles: 16,
+    playerHitVibrateMs: 18,
+    bossDeathVibrateMs: 75,
   },
 };
 const DEBUG_QUERY_ENABLED =
@@ -425,6 +439,44 @@ function shuffleArray(items) {
   return copy;
 }
 
+function vibrateIfSupported(pattern) {
+  if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
+  navigator.vibrate(pattern);
+}
+
+function spawnDamageText(x, y, value, { isCrit = false } = {}) {
+  // Keep text effects lightweight on mobile by capping active count.
+  const activeTextCount = gameState.effects.filter((fx) => fx.type === "damageText").length;
+  if (activeTextCount >= BALANCE.feedback.damageTextMaxCount) return;
+
+  gameState.effects.push({
+    type: "damageText",
+    x,
+    y,
+    vx: randomRange(-18, 18),
+    vy: isCrit ? -72 : -54,
+    radius: isCrit ? 1.18 : 1,
+    life: BALANCE.feedback.damageTextLife,
+    maxLife: BALANCE.feedback.damageTextLife,
+    color: isCrit ? "#ffd36e" : "#f1f6e5",
+    text: isCrit ? `CRIT ${Math.round(value)}` : `${Math.round(value)}`,
+  });
+}
+
+function addScreenShake(amount) {
+  if (!gameState) return;
+  gameState.screenShake = Math.min(8, (gameState.screenShake || 0) + amount);
+}
+
+function pushAnnouncement(text, life = BALANCE.feedback.bossIntroLife, color = "#ffe08a") {
+  gameState.announcements.push({
+    text,
+    life,
+    maxLife: life,
+    color,
+  });
+}
+
 function formatTime(seconds) {
   const safe = Math.max(0, Math.floor(seconds));
   const mm = String(Math.floor(safe / 60)).padStart(2, "0");
@@ -518,6 +570,9 @@ function createInitialState() {
     isLevelUpPaused: false,
     pendingLevelUps: 0,
     currentUpgradeOptions: [],
+    announcements: [],
+    screenShake: 0,
+    levelUpPulseTimer: 0,
     upgradeHistory: [],
     buildCounters: {
       damage: 0,
@@ -790,7 +845,19 @@ function spawnBossIfNeeded() {
   if (hasBossAlive) return;
 
   const pos = findSafeSpawnPosition();
-  gameState.enemies.push(createBoss(pos.x, pos.y));
+  const boss = createBoss(pos.x, pos.y);
+  gameState.enemies.push(boss);
+  gameState.effects.push({
+    type: "shockwave",
+    x: boss.x,
+    y: boss.y,
+    radius: 145,
+    life: 0.5,
+    maxLife: 0.5,
+    color: "#ffbe74",
+  });
+  pushAnnouncement("Boss 出現！", BALANCE.feedback.bossIntroLife, "#ffd58a");
+  addScreenShake(3.6);
   gameState.nextBossTime += BALANCE.boss.interval;
 }
 
@@ -884,6 +951,34 @@ function onEnemyKilled(enemy) {
     spawnXpOrb(enemy, BALANCE.boss.killXpMultiplier);
     spawnHealOrb(enemy, BALANCE.boss.killHeal);
     gameState.pendingLevelUps += BALANCE.boss.bonusLevelUpsOnKill;
+    // Boss kill highlight: extra burst + screen shake + vibration feedback.
+    for (let i = 0; i < BALANCE.feedback.bossDeathBurstParticles; i += 1) {
+      const angle = (Math.PI * 2 * i) / BALANCE.feedback.bossDeathBurstParticles;
+      const speed = randomRange(120, 210);
+      gameState.effects.push({
+        type: "particle",
+        x: enemy.x,
+        y: enemy.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        radius: randomRange(3, 5),
+        life: 0.48,
+        maxLife: 0.48,
+        color: "#ffd27a",
+      });
+    }
+    gameState.effects.push({
+      type: "shockwave",
+      x: enemy.x,
+      y: enemy.y,
+      radius: 180,
+      life: 0.58,
+      maxLife: 0.58,
+      color: "#ffd57f",
+    });
+    pushAnnouncement("Boss 擊破！", 1.2, "#ffe79b");
+    addScreenShake(5.2);
+    vibrateIfSupported(BALANCE.feedback.bossDeathVibrateMs);
   }
 }
 
@@ -1080,6 +1175,8 @@ function updateEnemies(deltaTime) {
     if (touching && player.damageCooldownTimer <= 0) {
       player.health = Math.max(0, player.health - enemy.damage);
       player.damageCooldownTimer = CONFIG.playerInvulnerabilityDuration;
+      addScreenShake(enemy.isBoss ? 2.4 : 1.2);
+      vibrateIfSupported(BALANCE.feedback.playerHitVibrateMs);
       if (enemy.lifeStealRatio > 0) {
         enemy.health = Math.min(enemy.maxHealth, enemy.health + enemy.damage * enemy.lifeStealRatio);
       }
@@ -1090,6 +1187,15 @@ function updateEnemies(deltaTime) {
 }
 
 function updateEffects(deltaTime) {
+  if (gameState.levelUpPulseTimer > 0) {
+    gameState.levelUpPulseTimer = Math.max(0, gameState.levelUpPulseTimer - deltaTime);
+  }
+  gameState.screenShake = Math.max(0, gameState.screenShake - deltaTime * 14);
+  gameState.announcements = gameState.announcements.filter((item) => {
+    item.life -= deltaTime;
+    return item.life > 0;
+  });
+
   gameState.effects = gameState.effects.filter((fx) => {
     fx.life -= deltaTime;
     if (fx.type === "particle") {
@@ -1097,6 +1203,11 @@ function updateEffects(deltaTime) {
       fx.y += fx.vy * deltaTime;
       fx.vx *= 0.94;
       fx.vy *= 0.94;
+    } else if (fx.type === "damageText") {
+      fx.x += fx.vx * deltaTime;
+      fx.y += fx.vy * deltaTime;
+      fx.vx *= 0.92;
+      fx.vy *= 0.88;
     }
     return fx.life > 0;
   });
@@ -1208,6 +1319,7 @@ function renderUpgradeOptions() {
 
 function openLevelUpPanel() {
   gameState.isLevelUpPaused = true;
+  gameState.levelUpPulseTimer = BALANCE.feedback.levelUpPulseLife;
   gameState.currentUpgradeOptions = getRandomUpgradeChoices(3);
   input.up = false;
   input.down = false;
@@ -1216,6 +1328,21 @@ function openLevelUpPanel() {
   input.joystickX = 0;
   input.joystickY = 0;
   joystickThumb.style.transform = "translate(-50%, -50%)";
+  levelUpPanel.classList.remove("levelup-flash");
+  // Force reflow so repeated flashes still replay animation.
+  // eslint-disable-next-line no-unused-expressions
+  levelUpPanel.offsetWidth;
+  levelUpPanel.classList.add("levelup-flash");
+  pushAnnouncement("升級！選擇一項強化", 0.95, "#d9f29c");
+  gameState.effects.push({
+    type: "shockwave",
+    x: gameState.player.x,
+    y: gameState.player.y,
+    radius: 130,
+    life: 0.24,
+    maxLife: 0.24,
+    color: "#d8f3a1",
+  });
   renderUpgradeOptions();
   levelUpPanel.classList.remove("hidden");
 }
@@ -1229,6 +1356,7 @@ function applyUpgrade(upgradeId) {
   gameState.isLevelUpPaused = false;
   gameState.currentUpgradeOptions = [];
   levelUpPanel.classList.add("hidden");
+  levelUpPanel.classList.remove("levelup-flash");
   upgradeOptions.innerHTML = "";
 
   gameState.upgradeHistory.push(upgrade.summary);
@@ -1335,7 +1463,34 @@ function updateAutoAttack() {
 
     enemy.health -= damage;
     totalDealt += damage;
-    enemy.hitFlashTimer = CONFIG.enemyHitFlashDuration;
+    const hitFlash = enemy.isBoss
+      ? CONFIG.enemyHitFlashDuration * 2.25
+      : enemy.isElite
+        ? CONFIG.enemyHitFlashDuration * 1.65
+        : CONFIG.enemyHitFlashDuration;
+    enemy.hitFlashTimer = Math.max(enemy.hitFlashTimer, hitFlash);
+    spawnDamageText(enemy.x, enemy.y - enemy.radius * 0.32, damage, { isCrit: critRoll });
+
+    let shakeAmount = enemy.isBoss
+      ? BALANCE.feedback.bossHitShake
+      : enemy.isElite
+        ? BALANCE.feedback.eliteHitShake
+        : BALANCE.feedback.normalHitShake;
+    if (critRoll) shakeAmount += BALANCE.feedback.critShakeBonus;
+    addScreenShake(shakeAmount);
+
+    if (critRoll) {
+      gameState.effects.push({
+        type: "shockwave",
+        x: enemy.x,
+        y: enemy.y,
+        radius: enemy.radius * 2.2,
+        life: 0.15,
+        maxLife: 0.15,
+        color: "#ffd676",
+      });
+    }
+
     const safe = dist || 1;
     const kb = CONFIG.baseKnockbackForce * player.stats.knockbackMultiplier;
     enemy.knockbackX = (ex / safe) * kb;
@@ -1419,7 +1574,10 @@ function updateHud() {
   phaseValue.textContent = getPhaseLabel(gameState.elapsedTime);
   xpValue.textContent = `${Math.floor(player.experience)} / ${player.experienceToNextLevel}`;
   xpFill.style.width = `${(player.experience / player.experienceToNextLevel) * 100}%`;
-  gameHud.classList.toggle("low-hp", player.health / player.maxHealth < 0.3);
+  gameHud.classList.toggle(
+    "low-hp",
+    player.health / player.maxHealth < BALANCE.feedback.lowHpPulseThreshold
+  );
 }
 
 function drawBackgroundDetails() {
@@ -1493,6 +1651,10 @@ function drawPlayer(player) {
 
 function drawEnemy(enemy) {
   ctx.save();
+  if (enemy.hitFlashTimer > 0 && (enemy.isElite || enemy.isBoss)) {
+    const amp = enemy.isBoss ? 2.1 : 1.2;
+    ctx.translate(randomRange(-amp, amp), randomRange(-amp, amp));
+  }
   ctx.fillStyle = enemy.hitFlashTimer > 0 ? enemy.hitColor : enemy.color;
   ctx.beginPath();
   ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
@@ -1571,6 +1733,13 @@ function drawEffects() {
       ctx.beginPath();
       ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
       ctx.fill();
+    } else if (fx.type === "damageText") {
+      const scale = fx.radius || 1;
+      ctx.fillStyle = fx.color || "#f1f6e5";
+      ctx.font = `${Math.floor(12 * scale)}px "Segoe UI", sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(fx.text || "0", fx.x, fx.y);
     } else if (fx.type === "shockwave") {
       ctx.strokeStyle = fx.color;
       ctx.lineWidth = 4;
@@ -1628,8 +1797,35 @@ function drawDebugOverlay() {
   ctx.restore();
 }
 
+function drawAnnouncements() {
+  if (!gameState.announcements || gameState.announcements.length === 0) return;
+  const top = gameState.announcements[0];
+  const alpha = clamp(top.life / top.maxLife, 0, 1);
+  const y = 44 + (1 - alpha) * 8;
+
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, alpha * 1.2);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.font = "bold 20px 'Segoe UI', sans-serif";
+  const label = top.text;
+  const width = ctx.measureText(label).width;
+  ctx.fillStyle = "rgba(8, 10, 9, 0.62)";
+  ctx.fillRect(WORLD.width / 2 - width / 2 - 14, y - 4, width + 28, 30);
+  ctx.fillStyle = top.color || "#ffe08a";
+  ctx.fillText(label, WORLD.width / 2, y);
+  ctx.restore();
+}
+
 function drawGame() {
   ctx.clearRect(0, 0, WORLD.width, WORLD.height);
+  const shake = gameState.screenShake || 0;
+  const sx = shake > 0 ? randomRange(-shake, shake) : 0;
+  const sy = shake > 0 ? randomRange(-shake, shake) : 0;
+  ctx.save();
+  if (sx !== 0 || sy !== 0) {
+    ctx.translate(sx, sy);
+  }
   drawBackgroundDetails();
   for (const enemy of gameState.enemies) {
     drawEnemy(enemy);
@@ -1637,6 +1833,8 @@ function drawGame() {
   drawOrbs();
   drawEffects();
   drawPlayer(gameState.player);
+  ctx.restore();
+  drawAnnouncements();
   drawDebugOverlay();
 }
 
