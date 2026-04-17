@@ -5,13 +5,13 @@
 :root {
   --bg: #0b0f0d;
   --panel: rgba(21, 27, 24, 0.9);
-  --panel-border: rgba(132, 160, 119, 0.2);
+  --panel-border: rgba(132, 160, 119, 0.24);
   --text: #e8efe8;
   --muted: #9fb39f;
-  --accent: #c84c33;
-  --accent-soft: #7db26f;
   --accent-glow: #d7ed99;
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 html,
@@ -22,7 +22,7 @@ body {
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100dvh;
   font-family: "Segoe UI", "Noto Sans TC", sans-serif;
   color: var(--text);
   background:
@@ -38,51 +38,69 @@ body {
   margin: 24px auto 40px;
 }
 
+/* Compact game HUD with two rows:
+   row 1 = LV / HP / SCORE
+   row 2 = EXP meta + bar */
 .hud {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.hud-card,
-.overlay-card,
-.upgrade-option,
-.utility-panel {
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
   border: 1px solid var(--panel-border);
+  border-radius: 14px;
   background: var(--panel);
   box-shadow: var(--shadow);
   backdrop-filter: blur(10px);
 }
 
-.hud-card {
+.hud-top {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hud-stat {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px;
-  border-radius: 14px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid rgba(132, 160, 119, 0.2);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(10, 15, 13, 0.45);
 }
 
 .hud-label {
-  font-size: 0.78rem;
-  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.hud-exp {
+  display: grid;
+  gap: 6px;
 }
 
 .xp-meta {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 0.92rem;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.mobile-hint {
+  display: none;
 }
 
 .xp-bar {
   position: relative;
-  height: 10px;
+  height: 8px;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .xp-fill {
@@ -98,7 +116,7 @@ body {
   position: relative;
   border-radius: 20px;
   overflow: hidden;
-  border: 1px solid rgba(132, 160, 119, 0.18);
+  border: 1px solid rgba(132, 160, 119, 0.22);
   box-shadow: var(--shadow);
   touch-action: none;
 }
@@ -133,54 +151,68 @@ canvas {
   position: absolute;
   left: 18px;
   bottom: 18px;
-  width: 138px;
-  height: 138px;
+  width: 118px;
+  height: 118px;
   display: none;
   place-items: center;
 }
 
 .joystick-base {
   position: relative;
-  width: 120px;
-  height: 120px;
+  width: 100px;
+  height: 100px;
   border-radius: 50%;
-  background: rgba(19, 26, 22, 0.45);
-  border: 1px solid rgba(215, 237, 153, 0.18);
+  background: rgba(19, 26, 22, 0.35);
+  border: 1px solid rgba(215, 237, 153, 0.16);
   box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.28);
+  opacity: 0.45;
+  transition: opacity 120ms ease, filter 120ms ease;
+}
+
+.joystick-base.is-active {
+  opacity: 0.88;
+  filter: brightness(1.1);
 }
 
 .joystick-thumb {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 54px;
-  height: 54px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.32), rgba(90, 125, 84, 0.95));
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.38), rgba(90, 125, 84, 0.95));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 .attack-button {
   position: absolute;
-  right: 22px;
-  bottom: 24px;
+  right: 18px;
+  bottom: 20px;
   display: none;
-  width: 108px;
-  height: 108px;
+  width: 88px;
+  height: 88px;
   padding: 0;
   border-radius: 50%;
   border: 1px solid rgba(255, 218, 179, 0.24);
-  background: radial-gradient(circle at 30% 30%, rgba(255, 238, 195, 0.92), rgba(184, 99, 59, 0.88));
+  background: radial-gradient(circle at 30% 30%, rgba(255, 238, 195, 0.86), rgba(184, 99, 59, 0.8));
   color: #25140d;
-  font-size: 1rem;
+  font-size: 0.88rem;
   font-weight: 800;
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+  opacity: 0.5;
+  transition: opacity 120ms ease, filter 120ms ease, transform 120ms ease;
+}
+
+.attack-button.is-active {
+  opacity: 0.9;
+  filter: brightness(1.1);
 }
 
 .attack-button.is-pressed {
-  transform: scale(0.96);
-  filter: brightness(0.96);
+  transform: scale(0.95);
+  filter: brightness(1);
 }
 
 .overlay {
@@ -201,6 +233,10 @@ canvas {
   padding: 28px;
   text-align: center;
   border-radius: 18px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
 }
 
 .overlay-card-large {
@@ -228,6 +264,8 @@ canvas {
   width: 100%;
   padding: 18px;
   border-radius: 18px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
   text-align: left;
   color: var(--text);
   cursor: pointer;
@@ -251,6 +289,7 @@ canvas {
   line-height: 1.45;
 }
 
+/* Keep shared utility styles for standalone qr-generator page */
 .utility-panel {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
@@ -258,6 +297,10 @@ canvas {
   margin-top: 20px;
   padding: 22px;
   border-radius: 20px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
 }
 
 .utility-copy h2 {
@@ -375,10 +418,6 @@ button:active {
 }
 
 @media (max-width: 920px) {
-  .hud {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .upgrade-grid,
   .utility-panel,
   .qr-preview {
@@ -393,25 +432,106 @@ button:active {
   }
 }
 
+/* Mobile-first game layout optimization:
+   - smaller HUD
+   - bigger playable area
+   - safe-area aware paddings
+   - lighter virtual controls */
 @media (max-width: 720px) {
+  body {
+    min-height: 100dvh;
+  }
+
   .game-shell {
-    width: min(100vw - 12px, 1100px);
-    margin: 6px auto 20px;
+    width: min(100vw - 10px, 1100px);
+    margin: 0 auto;
+    padding-top: calc(var(--safe-top) + 6px);
+    padding-bottom: calc(var(--safe-bottom) + 8px);
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .hud {
-    grid-template-columns: 1fr;
-    gap: 8px;
-    margin-bottom: 8px;
+    margin: 0;
+    padding: 8px;
+    gap: 6px;
+    border-radius: 12px;
   }
 
-  .hud-card {
-    padding: 12px 14px;
+  .hud-top {
+    gap: 6px;
+  }
+
+  .hud-stat {
+    padding: 6px 8px;
+    min-height: 36px;
+    font-size: 0.88rem;
+  }
+
+  .hud-label {
+    font-size: 0.64rem;
+    letter-spacing: 0.08em;
   }
 
   .xp-meta {
-    flex-direction: column;
-    gap: 4px;
+    font-size: 0.8rem;
+    gap: 8px;
+  }
+
+  .desktop-hint {
+    display: none;
+  }
+
+  .mobile-hint {
+    display: inline;
+  }
+
+  .xp-bar {
+    height: 7px;
+  }
+
+  .arena-frame {
+    flex: 1;
+    min-height: 55dvh;
+    max-height: 70dvh;
+    border-radius: 14px;
+  }
+
+  canvas {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+  }
+
+  .joystick-area {
+    left: 8px;
+    bottom: calc(var(--safe-bottom) + 6px);
+    width: 104px;
+    height: 104px;
+  }
+
+  .joystick-base {
+    width: 86px;
+    height: 86px;
+  }
+
+  .joystick-thumb {
+    width: 36px;
+    height: 36px;
+  }
+
+  .attack-button {
+    right: 10px;
+    bottom: calc(var(--safe-bottom) + 8px);
+    width: 76px;
+    height: 76px;
+    font-size: 0.78rem;
+  }
+
+  .overlay-card {
+    padding: 20px;
   }
 
   .utility-panel {
@@ -425,30 +545,5 @@ button:active {
 
   .qr-input {
     width: 100%;
-  }
-
-  .joystick-area {
-    left: 8px;
-    bottom: 8px;
-    width: 126px;
-    height: 126px;
-  }
-
-  .joystick-base {
-    width: 108px;
-    height: 108px;
-  }
-
-  .joystick-thumb {
-    width: 48px;
-    height: 48px;
-  }
-
-  .attack-button {
-    right: 10px;
-    bottom: 10px;
-    width: 96px;
-    height: 96px;
-    font-size: 0.95rem;
   }
 }

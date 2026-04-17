@@ -1,4 +1,5 @@
 const BASE_ASPECT_RATIO = 16 / 9;
+const MOBILE_ASPECT_RATIO = 0.95;
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -18,11 +19,6 @@ const gameOverPanel = document.getElementById("gameOverPanel");
 const levelUpPanel = document.getElementById("levelUpPanel");
 const upgradeOptions = document.getElementById("upgradeOptions");
 const restartButton = document.getElementById("restartButton");
-const qrUrlInput = document.getElementById("qrUrlInput");
-const generateQrButton = document.getElementById("generateQrButton");
-const qrCanvas = document.getElementById("qrCanvas");
-const qrStatus = document.getElementById("qrStatus");
-const downloadQrLink = document.getElementById("downloadQrLink");
 
 const WORLD = {
   width: canvas.width,
@@ -52,12 +48,11 @@ const CONFIG = {
   joystickMaxDistance: 36,
 };
 
-// 敵人定義集中管理。之後若新增遠程怪、菁英怪或 Boss，
-// 只要補這個設定物件與對應權重邏輯即可。
+// Enemy data is centralized so future enemy types can be added safely.
 const ENEMY_TYPES = {
   normal: {
     id: "normal",
-    name: "普通怪",
+    name: "Normal",
     radius: 14,
     maxHealth: 38,
     speed: 84,
@@ -69,7 +64,7 @@ const ENEMY_TYPES = {
   },
   swift: {
     id: "swift",
-    name: "快速怪",
+    name: "Swift",
     radius: 11,
     maxHealth: 22,
     speed: 142,
@@ -81,7 +76,7 @@ const ENEMY_TYPES = {
   },
   tank: {
     id: "tank",
-    name: "坦克怪",
+    name: "Tank",
     radius: 20,
     maxHealth: 72,
     speed: 55,
@@ -93,21 +88,20 @@ const ENEMY_TYPES = {
   },
 };
 
-// 升級定義集中管理，之後要擴充技能系統時，
-// 只要在這裡新增條目與 apply 函式即可。
+// Upgrade effects are centralized here for future skill-system expansion.
 const UPGRADE_DEFINITIONS = {
   attackDamage: {
     id: "attackDamage",
-    title: "攻擊力提升",
-    description: "每次近戰傷害 +6，讓清怪更穩定。",
+    title: "Attack Up",
+    description: "Melee damage +6.",
     apply(player) {
       player.stats.attackDamage += 6;
     },
   },
   attackCooldown: {
     id: "attackCooldown",
-    title: "攻擊冷卻縮短",
-    description: "攻擊冷卻 -0.04 秒，讓輸出更流暢。",
+    title: "Faster Attack",
+    description: "Attack cooldown -0.04 sec.",
     apply(player) {
       player.stats.attackCooldown = Math.max(
         CONFIG.attackCooldownFloor,
@@ -117,8 +111,8 @@ const UPGRADE_DEFINITIONS = {
   },
   maxHealth: {
     id: "maxHealth",
-    title: "最大生命增加",
-    description: "最大生命 +20，並立即回復 20 生命。",
+    title: "Health Up",
+    description: "Max HP +20 and heal +20.",
     apply(player) {
       player.maxHealth += 20;
       player.health = Math.min(player.maxHealth, player.health + 20);
@@ -126,16 +120,16 @@ const UPGRADE_DEFINITIONS = {
   },
   moveSpeed: {
     id: "moveSpeed",
-    title: "移動速度增加",
-    description: "移動速度 +24，走位更從容。",
+    title: "Move Speed Up",
+    description: "Move speed +24.",
     apply(player) {
       player.stats.moveSpeed += 24;
     },
   },
   attackRange: {
     id: "attackRange",
-    title: "攻擊範圍增加",
-    description: "近戰範圍 +10，清怪更安全。",
+    title: "Range Up",
+    description: "Melee range +10.",
     apply(player) {
       player.stats.attackRange += 10;
     },
@@ -159,7 +153,31 @@ const touchState = {
 let gameState;
 let lastTimestamp = 0;
 let animationFrameId = 0;
-let qrInstance = null;
+
+function randomRange(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function distanceBetween(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function shuffleArray(items) {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function getExperienceRequirement(level) {
+  return Math.floor(CONFIG.baseXpToNextLevel * Math.pow(CONFIG.xpGrowthFactor, level - 1));
+}
 
 function createPlayer() {
   return {
@@ -201,48 +219,35 @@ function createInitialState() {
   };
 }
 
-function randomRange(min, max) {
-  return Math.random() * (max - min) + min;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function distanceBetween(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-function shuffleArray(items) {
-  const copy = [...items];
-
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-
-  return copy;
-}
-
-function getExperienceRequirement(level) {
-  return Math.floor(CONFIG.baseXpToNextLevel * Math.pow(CONFIG.xpGrowthFactor, level - 1));
-}
-
-// 讓 canvas 依容器寬度自動縮放，同時同步遊戲世界尺寸。
-// 這樣桌機與手機都能共用同一套更新與繪圖邏輯。
+// Resize canvas for desktop/mobile without breaking world coordinate logic.
+// Mobile focuses on larger vertical play area (about 55%-70% viewport height).
 function resizeCanvas() {
   const previousWidth = WORLD.width;
   const previousHeight = WORLD.height;
-  const displayWidth = Math.max(320, Math.floor(arenaFrame.clientWidth));
-  const displayHeight = Math.floor(displayWidth / BASE_ASPECT_RATIO);
+
+  const isMobileLayout = window.matchMedia("(max-width: 720px)").matches;
+  const viewportHeight = Math.floor(window.visualViewport?.height || window.innerHeight);
+  const frameWidth = Math.max(280, Math.floor(arenaFrame.clientWidth || window.innerWidth - 12));
+  let displayHeight = 0;
+
+  if (isMobileLayout) {
+    const minMobileHeight = Math.floor(viewportHeight * 0.55);
+    const maxMobileHeight = Math.floor(viewportHeight * 0.7);
+    const naturalHeight = Math.floor(frameWidth / MOBILE_ASPECT_RATIO);
+    displayHeight = clamp(naturalHeight, minMobileHeight, maxMobileHeight);
+  } else {
+    displayHeight = Math.floor(frameWidth / BASE_ASPECT_RATIO);
+  }
+
   const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 
-  canvas.style.width = `${displayWidth}px`;
+  arenaFrame.style.height = `${displayHeight}px`;
+  canvas.style.width = `${frameWidth}px`;
   canvas.style.height = `${displayHeight}px`;
-  canvas.width = Math.floor(displayWidth * devicePixelRatio);
+  canvas.width = Math.floor(frameWidth * devicePixelRatio);
   canvas.height = Math.floor(displayHeight * devicePixelRatio);
 
-  WORLD.width = displayWidth;
+  WORLD.width = frameWidth;
   WORLD.height = displayHeight;
 
   ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
@@ -254,7 +259,6 @@ function resizeCanvas() {
   const scaleX = WORLD.width / previousWidth;
   const scaleY = WORLD.height / previousHeight;
 
-  // 世界尺寸改變時，將既有物件的位置按比例換算，避免旋轉螢幕時角色跳位。
   gameState.player.x *= scaleX;
   gameState.player.y *= scaleY;
 
@@ -279,10 +283,8 @@ function resizeCanvas() {
 
 function createEnemy(typeId, x, y) {
   const type = ENEMY_TYPES[typeId];
-
   return {
     typeId,
-    type,
     x,
     y,
     radius: type.radius,
@@ -302,8 +304,6 @@ function createEnemy(typeId, x, y) {
 
 function getEnemySpawnWeights(elapsedTime) {
   const minutes = elapsedTime / 60;
-
-  // 隨遊戲時間提升高威脅敵人的比重。
   return {
     normal: Math.max(0.24, 0.78 - minutes * 0.08),
     swift: Math.min(0.42, 0.16 + minutes * 0.045),
@@ -323,7 +323,6 @@ function chooseEnemyType(elapsedTime) {
       return typeId;
     }
   }
-
   return "normal";
 }
 
@@ -355,8 +354,6 @@ function spawnDeathEffect(enemy) {
   });
 }
 
-// 經驗值掉落獨立成可收集物件，之後若擴充金幣、掉寶或磁吸效果，
-// 可以沿用相同的 update / draw 流程。
 function spawnExperienceOrb(enemy) {
   gameState.xpOrbs.push({
     x: enemy.x,
@@ -394,6 +391,8 @@ function spawnEnemy() {
 function resetTouchControls() {
   input.joystickX = 0;
   input.joystickY = 0;
+  joystickBase.classList.remove("is-active");
+  attackButton.classList.remove("is-active");
   attackButton.classList.remove("is-pressed");
   joystickThumb.style.transform = "translate(-50%, -50%)";
   touchState.joystickPointerId = null;
@@ -415,8 +414,6 @@ function updatePlayer(deltaTime) {
   const player = gameState.player;
   const keyboardX = (input.right ? 1 : 0) - (input.left ? 1 : 0);
   const keyboardY = (input.down ? 1 : 0) - (input.up ? 1 : 0);
-
-  // 搖桿輸入與鍵盤輸入合併，讓桌機和手機共用同一套移動邏輯。
   let moveX = keyboardX + input.joystickX;
   let moveY = keyboardY + input.joystickY;
 
@@ -482,8 +479,6 @@ function gainExperience(amount) {
   const player = gameState.player;
   player.experience += amount;
 
-  // 升級檢查集中在這裡，之後若加入多段經驗曲線或被動增益，
-  // 只需要改這個入口即可。
   while (player.experience >= player.experienceToNextLevel) {
     player.experience -= player.experienceToNextLevel;
     player.level += 1;
@@ -530,10 +525,7 @@ function renderUpgradeOptions() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "upgrade-option";
-    button.innerHTML = `
-      <h2>${option.title}</h2>
-      <p>${option.description}</p>
-    `;
+    button.innerHTML = `<h2>${option.title}</h2><p>${option.description}</p>`;
     button.addEventListener("click", () => applyUpgrade(option.id));
     upgradeOptions.appendChild(button);
   }
@@ -556,9 +548,7 @@ function openLevelUpPanel() {
 
 function applyUpgrade(upgradeId) {
   const upgrade = UPGRADE_DEFINITIONS[upgradeId];
-  if (!upgrade) {
-    return;
-  }
+  if (!upgrade) return;
 
   upgrade.apply(gameState.player);
   gameState.pendingLevelUps = Math.max(0, gameState.pendingLevelUps - 1);
@@ -592,9 +582,7 @@ function performAttack() {
     const dy = enemy.y - player.y;
     const distance = Math.hypot(dx, dy);
 
-    if (distance > player.stats.attackRange + enemy.radius) {
-      return true;
-    }
+    if (distance > player.stats.attackRange + enemy.radius) return true;
 
     const enemyAngle = Math.atan2(dy, dx);
     const angleDelta = Math.atan2(
@@ -602,9 +590,7 @@ function performAttack() {
       Math.cos(enemyAngle - attackAngle)
     );
 
-    if (Math.abs(angleDelta) > CONFIG.attackArc / 2) {
-      return true;
-    }
+    if (Math.abs(angleDelta) > CONFIG.attackArc / 2) return true;
 
     enemy.health -= player.stats.attackDamage;
     enemy.hitFlashTimer = CONFIG.enemyHitFlashDuration;
@@ -634,9 +620,7 @@ function updateSpawning(deltaTime) {
 }
 
 function updateGame(deltaTime) {
-  if (gameState.isGameOver) {
-    return;
-  }
+  if (gameState.isGameOver) return;
 
   updateEffects(deltaTime);
 
@@ -771,7 +755,6 @@ function drawExperienceOrbs() {
 function drawEffects() {
   for (const effect of gameState.effects) {
     const alpha = clamp(effect.life / effect.maxLife, 0, 1);
-
     ctx.save();
     ctx.globalAlpha = alpha;
 
@@ -818,7 +801,6 @@ function updateJoystickFromPointer(clientX, clientY) {
   const thumbX = Math.cos(angle) * limitedDistance;
   const thumbY = Math.sin(angle) * limitedDistance;
 
-  // 搖桿輸出標準化成 -1 到 1，直接給既有移動更新流程使用。
   input.joystickX = distance === 0 ? 0 : thumbX / CONFIG.joystickMaxDistance;
   input.joystickY = distance === 0 ? 0 : thumbY / CONFIG.joystickMaxDistance;
   joystickThumb.style.transform = `translate(calc(-50% + ${thumbX}px), calc(-50% + ${thumbY}px))`;
@@ -828,50 +810,41 @@ function releaseJoystick() {
   input.joystickX = 0;
   input.joystickY = 0;
   touchState.joystickPointerId = null;
+  joystickBase.classList.remove("is-active");
   joystickThumb.style.transform = "translate(-50%, -50%)";
 }
 
 function setupTouchControls() {
-  // 使用 pointer events 可以同時涵蓋手機觸控與部分平板裝置。
   joystickArea.addEventListener("pointerdown", (event) => {
     event.preventDefault();
-    if (touchState.joystickPointerId !== null) {
-      return;
-    }
+    if (touchState.joystickPointerId !== null) return;
 
     touchState.joystickPointerId = event.pointerId;
+    joystickBase.classList.add("is-active");
     joystickArea.setPointerCapture(event.pointerId);
     updateJoystickFromPointer(event.clientX, event.clientY);
   });
 
   joystickArea.addEventListener("pointermove", (event) => {
-    if (touchState.joystickPointerId !== event.pointerId) {
-      return;
-    }
-
+    if (touchState.joystickPointerId !== event.pointerId) return;
     event.preventDefault();
     updateJoystickFromPointer(event.clientX, event.clientY);
   });
 
   const endJoystickPointer = (event) => {
-    if (touchState.joystickPointerId !== event.pointerId) {
-      return;
-    }
-
+    if (touchState.joystickPointerId !== event.pointerId) return;
     event.preventDefault();
     releaseJoystick();
   };
 
   joystickArea.addEventListener("pointerup", endJoystickPointer);
   joystickArea.addEventListener("pointercancel", endJoystickPointer);
-  joystickArea.addEventListener("lostpointercapture", () => {
-    releaseJoystick();
-  });
+  joystickArea.addEventListener("lostpointercapture", releaseJoystick);
 
-  // 攻擊鍵只負責觸發攻擊，不改動桌機 Space 鍵流程。
   attackButton.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     touchState.attackPointerId = event.pointerId;
+    attackButton.classList.add("is-active");
     attackButton.classList.add("is-pressed");
     performAttack();
     updateHud();
@@ -884,13 +857,14 @@ function setupTouchControls() {
 
     event.preventDefault();
     touchState.attackPointerId = null;
+    attackButton.classList.remove("is-active");
     attackButton.classList.remove("is-pressed");
   };
 
   attackButton.addEventListener("pointerup", releaseAttackButton);
   attackButton.addEventListener("pointercancel", releaseAttackButton);
 
-  // 防止行動裝置在遊戲區域內滾動頁面或觸發瀏覽器手勢。
+  // Prevent accidental page scrolling when dragging inside battle area.
   arenaFrame.addEventListener(
     "touchmove",
     (event) => {
@@ -905,9 +879,7 @@ function setupTouchControls() {
 }
 
 function gameLoop(timestamp) {
-  if (!lastTimestamp) {
-    lastTimestamp = timestamp;
-  }
+  if (!lastTimestamp) lastTimestamp = timestamp;
 
   const deltaTime = Math.min((timestamp - lastTimestamp) / 1000, 0.05);
   lastTimestamp = timestamp;
@@ -955,76 +927,9 @@ restartButton.addEventListener("click", () => {
   resetGame();
 });
 
-function updateQrDownloadLink() {
-  if (!qrCanvas || !downloadQrLink) {
-    return;
-  }
-
-  downloadQrLink.href = qrCanvas.toDataURL("image/png");
-  downloadQrLink.classList.remove("hidden");
-}
-
-// Keep QR generation fully in the browser so GitHub Pages deployment stays static.
-function renderQrCode(value) {
-  if (!qrCanvas || !qrStatus) {
-    return;
-  }
-
-  const trimmedValue = value.trim();
-
-  if (!trimmedValue) {
-    qrStatus.textContent = "Please paste a URL before generating a QR Code.";
-    downloadQrLink?.classList.add("hidden");
-    return;
-  }
-
-  if (!window.QRious) {
-    qrStatus.textContent = "QR library failed to load. Check your network and try again.";
-    downloadQrLink?.classList.add("hidden");
-    return;
-  }
-
-  if (!qrInstance) {
-    qrInstance = new window.QRious({
-      element: qrCanvas,
-      value: trimmedValue,
-      size: 240,
-      background: "white",
-      foreground: "black",
-      level: "M",
-      padding: 16,
-    });
-  } else {
-    qrInstance.value = trimmedValue;
-  }
-
-  qrStatus.textContent = `QR Code ready for: ${trimmedValue}`;
-  updateQrDownloadLink();
-}
-
-function initQrGenerator() {
-  if (!qrUrlInput || !generateQrButton || !qrCanvas) {
-    return;
-  }
-
-  generateQrButton.addEventListener("click", () => {
-    renderQrCode(qrUrlInput.value);
-  });
-
-  qrUrlInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      renderQrCode(qrUrlInput.value);
-    }
-  });
-
-  renderQrCode(qrUrlInput.value);
-}
-
 function init() {
   resetGame();
   setupTouchControls();
-  initQrGenerator();
   window.cancelAnimationFrame(animationFrameId);
   animationFrameId = window.requestAnimationFrame(gameLoop);
 }
