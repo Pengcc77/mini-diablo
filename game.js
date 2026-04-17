@@ -34,11 +34,116 @@ const WORLD = {
   height: canvas.height,
 };
 
+const BALANCE = {
+  // Core progression and combat pacing values are centralized here for fast tuning.
+  progression: {
+    xpFirst: 14,
+    xpSecond: 19,
+    xpBase: 24,
+    xpGrowth: 1.3,
+  },
+  upgrades: {
+    attackDamageMult: 1.2,
+    attackCooldownMult: 0.85,
+    attackRangeMult: 1.15,
+    maxHealthFlat: 25,
+    moveSpeedMult: 1.1,
+    regenFlat: 2,
+    knockbackMult: 1.25,
+    critChanceFlat: 0.08,
+    pierceFlat: 1,
+    xpMagnetMult: 1.25,
+    lifestealFlat: 0.02,
+    critChanceCap: 0.45,
+    lifestealCap: 0.06,
+  },
+  elite: {
+    baseHealthMult: 1.12,
+    baseScoreMult: 2.0,
+    baseXpMult: 1.8,
+    radiusMult: 1.12,
+    rageSpeedMult: 1.28,
+    rageDamageMult: 1.15,
+    armorHealthMult: 1.35,
+    leechRatio: 0.24,
+  },
+  boss: {
+    interval: 65,
+    baseHealth: 320,
+    healthScalePerMinute: 0.11,
+    baseSpeed: 66,
+    speedPerMinute: 3,
+    baseDamage: 18,
+    damagePerMinute: 1.5,
+    baseScore: 240,
+    scorePerMinute: 44,
+    baseXp: 150,
+    xpPerMinute: 30,
+    skillCooldown: 5.2,
+    summonCooldown: 9.6,
+    killXpMultiplier: 2.1,
+    killHeal: 42,
+    bonusLevelUpsOnKill: 1,
+  },
+  spawn: {
+    // Three-stage smooth curve. User feedback: current speed is too fast.
+    earlyEnd: 35,
+    midEnd: 100,
+    lateRampDuration: 180,
+    early: {
+      intervalStart: 2.0,
+      intervalEnd: 1.62,
+      weights: { normal: 0.97, swift: 0.03, tank: 0 },
+      extraSpawnStart: 0,
+      extraSpawnEnd: 0.04,
+      eliteStart: 0.006,
+      eliteEnd: 0.018,
+    },
+    mid: {
+      intervalStart: 1.56,
+      intervalEnd: 1.22,
+      weightsStart: { normal: 0.85, swift: 0.13, tank: 0.02 },
+      weightsEnd: { normal: 0.7, swift: 0.22, tank: 0.08 },
+      extraSpawnStart: 0.06,
+      extraSpawnEnd: 0.15,
+      eliteStart: 0.022,
+      eliteEnd: 0.05,
+    },
+    late: {
+      intervalStart: 1.2,
+      intervalEnd: 0.94,
+      weightsStart: { normal: 0.62, swift: 0.24, tank: 0.14 },
+      weightsEnd: { normal: 0.53, swift: 0.28, tank: 0.19 },
+      extraSpawnStart: 0.17,
+      extraSpawnEnd: 0.29,
+      eliteStart: 0.055,
+      eliteEnd: 0.1,
+    },
+    maxEnemiesBase: 16,
+    maxEnemiesPerMinute: 2,
+    maxEnemiesCap: 34,
+    safeDistance: 210,
+  },
+  drops: {
+    healBaseChanceNormal: 0.05,
+    healBaseChanceElite: 0.11,
+    lowHpBonusScale: 0.6,
+    healNormal: 16,
+    healElite: 22,
+  },
+  debug: {
+    // Toggle debug with F3.
+    defaultEnabled: false,
+  },
+};
+const DEBUG_QUERY_ENABLED =
+  typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "1";
+
 const CONFIG = {
   basePlayerSpeed: 240,
   baseAttackDamage: 16,
   baseAttackCooldown: 0.75,
-  attackCooldownFloor: 0.22,
+  attackCooldownFloor: 0.26,
   attackDuration: 0.16,
   baseAttackRange: 80,
   attackArc: Math.PI * 0.82,
@@ -48,7 +153,7 @@ const CONFIG = {
   basePierce: 1,
   baseXpMagnetRadius: 130,
   enemyHitFlashDuration: 0.15,
-  playerInvulnerabilityDuration: 1.1,
+  playerInvulnerabilityDuration: 1.25,
   openingProtectionDuration: 4.2,
   deathFadeDuration: 0.36,
   particleDuration: 0.3,
@@ -59,9 +164,9 @@ const CONFIG = {
   dashDistance: 108,
   dashCooldown: 3.2,
   dashInvulnerability: 0.35,
-  spawnSafeDistance: 210,
+  spawnSafeDistance: BALANCE.spawn.safeDistance,
   joystickMaxDistance: 34,
-  bossInterval: 60,
+  bossInterval: BALANCE.boss.interval,
 };
 
 const ENEMY_TYPES = {
@@ -70,7 +175,7 @@ const ENEMY_TYPES = {
     radius: 14,
     maxHealth: 36,
     speed: 80,
-    damage: 8,
+    damage: 7,
     score: 10,
     xp: 8,
     color: "#8f2f24",
@@ -81,7 +186,7 @@ const ENEMY_TYPES = {
     radius: 11,
     maxHealth: 22,
     speed: 134,
-    damage: 6,
+    damage: 5,
     score: 14,
     xp: 10,
     color: "#c98f2f",
@@ -92,7 +197,7 @@ const ENEMY_TYPES = {
     radius: 20,
     maxHealth: 70,
     speed: 52,
-    damage: 13,
+    damage: 11,
     score: 24,
     xp: 15,
     color: "#5e2d8c",
@@ -106,8 +211,8 @@ const ELITE_AFFIXES = {
     id: "rage",
     name: "狂暴",
     apply(enemy) {
-      enemy.speed *= 1.35;
-      enemy.damage *= 1.2;
+      enemy.speed *= BALANCE.elite.rageSpeedMult;
+      enemy.damage *= BALANCE.elite.rageDamageMult;
       enemy.color = "#cc4d28";
     },
   },
@@ -115,7 +220,7 @@ const ELITE_AFFIXES = {
     id: "armor",
     name: "厚甲",
     apply(enemy) {
-      enemy.maxHealth *= 1.45;
+      enemy.maxHealth *= BALANCE.elite.armorHealthMult;
       enemy.health = enemy.maxHealth;
       enemy.color = "#4f6aa3";
     },
@@ -132,7 +237,7 @@ const ELITE_AFFIXES = {
     id: "leech",
     name: "吸血",
     apply(enemy) {
-      enemy.lifeStealRatio = 0.32;
+      enemy.lifeStealRatio = BALANCE.elite.leechRatio;
       enemy.color = "#8f355f";
     },
   },
@@ -155,7 +260,7 @@ function createUpgradeDefinitions() {
       description: "攻擊傷害 +20%",
       summary: "攻擊傷害",
       apply(player) {
-        player.stats.attackDamageMultiplier *= 1.2;
+        player.stats.attackDamageMultiplier *= BALANCE.upgrades.attackDamageMult;
       },
       buildTag: "damage",
     },
@@ -166,7 +271,7 @@ function createUpgradeDefinitions() {
       description: "攻擊間隔 -15%",
       summary: "攻擊速度",
       apply(player) {
-        player.stats.attackCooldownMultiplier *= 0.85;
+        player.stats.attackCooldownMultiplier *= BALANCE.upgrades.attackCooldownMult;
       },
       buildTag: "speed",
     },
@@ -177,7 +282,7 @@ function createUpgradeDefinitions() {
       description: "攻擊距離 +15%",
       summary: "攻擊範圍",
       apply(player) {
-        player.stats.attackRangeMultiplier *= 1.15;
+        player.stats.attackRangeMultiplier *= BALANCE.upgrades.attackRangeMult;
       },
       buildTag: "control",
     },
@@ -188,8 +293,8 @@ function createUpgradeDefinitions() {
       description: "最大生命 +25",
       summary: "生命上限",
       apply(player) {
-        player.maxHealth += 25;
-        player.health = Math.min(player.maxHealth, player.health + 25);
+        player.maxHealth += BALANCE.upgrades.maxHealthFlat;
+        player.health = Math.min(player.maxHealth, player.health + BALANCE.upgrades.maxHealthFlat);
       },
       buildTag: "tank",
     },
@@ -200,7 +305,7 @@ function createUpgradeDefinitions() {
       description: "移動速度 +10%",
       summary: "移動速度",
       apply(player) {
-        player.stats.moveSpeedMultiplier *= 1.1;
+        player.stats.moveSpeedMultiplier *= BALANCE.upgrades.moveSpeedMult;
       },
       buildTag: "speed",
     },
@@ -211,7 +316,7 @@ function createUpgradeDefinitions() {
       description: "每秒恢復 2 點生命",
       summary: "自動回血",
       apply(player) {
-        player.stats.regenPerSec += 2;
+        player.stats.regenPerSec += BALANCE.upgrades.regenFlat;
       },
       buildTag: "sustain",
     },
@@ -222,7 +327,7 @@ function createUpgradeDefinitions() {
       description: "擊退距離 +25%",
       summary: "擊退強化",
       apply(player) {
-        player.stats.knockbackMultiplier *= 1.25;
+        player.stats.knockbackMultiplier *= BALANCE.upgrades.knockbackMult;
       },
       buildTag: "control",
     },
@@ -233,7 +338,10 @@ function createUpgradeDefinitions() {
       description: "暴擊率 +8%",
       summary: "暴擊率",
       apply(player) {
-        player.stats.critChance += 0.08;
+        player.stats.critChance = Math.min(
+          BALANCE.upgrades.critChanceCap,
+          player.stats.critChance + BALANCE.upgrades.critChanceFlat
+        );
       },
       buildTag: "damage",
     },
@@ -244,7 +352,7 @@ function createUpgradeDefinitions() {
       description: "可額外命中 +1",
       summary: "穿透命中",
       apply(player) {
-        player.stats.pierce += 1;
+        player.stats.pierce += BALANCE.upgrades.pierceFlat;
       },
       buildTag: "damage",
     },
@@ -255,7 +363,7 @@ function createUpgradeDefinitions() {
       description: "吸收範圍 +25%",
       summary: "吸附範圍",
       apply(player) {
-        player.stats.xpMagnetMultiplier *= 1.25;
+        player.stats.xpMagnetMultiplier *= BALANCE.upgrades.xpMagnetMult;
       },
       buildTag: "utility",
     },
@@ -266,7 +374,10 @@ function createUpgradeDefinitions() {
       description: "命中吸血 +2%",
       summary: "命中吸血",
       apply(player) {
-        player.stats.lifesteal += 0.02;
+        player.stats.lifesteal = Math.min(
+          BALANCE.upgrades.lifestealCap,
+          player.stats.lifesteal + BALANCE.upgrades.lifestealFlat
+        );
       },
       buildTag: "sustain",
     },
@@ -322,15 +433,17 @@ function formatTime(seconds) {
 }
 
 function getPhaseLabel(elapsed) {
-  if (elapsed < 30) return "Phase 1";
-  if (elapsed < 60) return "Phase 2";
+  if (elapsed < BALANCE.spawn.earlyEnd) return "Phase 1";
+  if (elapsed < BALANCE.spawn.midEnd) return "Phase 2";
   return "Phase 3+";
 }
 
 function getXpRequirement(level) {
-  if (level <= 1) return 14;
-  if (level === 2) return 20;
-  return Math.floor(26 * Math.pow(1.33, level - 3));
+  if (level <= 1) return BALANCE.progression.xpFirst;
+  if (level === 2) return BALANCE.progression.xpSecond;
+  return Math.floor(
+    BALANCE.progression.xpBase * Math.pow(BALANCE.progression.xpGrowth, level - 3)
+  );
 }
 
 function getBuildSummaryTags(buildCounters) {
@@ -400,7 +513,7 @@ function createInitialState() {
     kills: 0,
     elapsedTime: 0,
     spawnTimer: 0,
-    nextBossTime: CONFIG.bossInterval,
+    nextBossTime: BALANCE.boss.interval,
     isGameOver: false,
     isLevelUpPaused: false,
     pendingLevelUps: 0,
@@ -414,6 +527,7 @@ function createInitialState() {
       sustain: 0,
       utility: 0,
     },
+    debugEnabled: BALANCE.debug.defaultEnabled || DEBUG_QUERY_ENABLED,
   };
 }
 
@@ -532,31 +646,29 @@ function applyEliteAffix(enemy, affixId) {
   affix.apply(enemy);
   enemy.isElite = true;
   enemy.eliteAffix = affixId;
-  // Lower elite bulk so they still feel threatening but clearly killable.
-  enemy.maxHealth *= 1.18;
+  enemy.maxHealth *= BALANCE.elite.baseHealthMult;
   enemy.health = enemy.maxHealth;
-  enemy.score *= 2.2;
-  enemy.xp *= 2;
-  enemy.radius *= 1.16;
+  enemy.score *= BALANCE.elite.baseScoreMult;
+  enemy.xp *= BALANCE.elite.baseXpMult;
+  enemy.radius *= BALANCE.elite.radiusMult;
 }
 
 function createBoss(x, y) {
   const elapsedMinutes = Math.floor(gameState.elapsedTime / 60);
-  // Front-load accessibility: early bosses are less tanky, then scale steadily.
-  const scale = 1 + elapsedMinutes * 0.13;
+  const scale = 1 + elapsedMinutes * BALANCE.boss.healthScalePerMinute;
   const boss = createEnemy("tank", x, y);
   boss.isBoss = true;
   boss.radius = 30;
-  boss.maxHealth = 360 * scale;
+  boss.maxHealth = BALANCE.boss.baseHealth * scale;
   boss.health = boss.maxHealth;
-  boss.speed = 72 + elapsedMinutes * 4;
-  boss.damage = 22 + elapsedMinutes * 2;
-  boss.score = 280 + elapsedMinutes * 50;
-  boss.xp = 170 + elapsedMinutes * 35;
+  boss.speed = BALANCE.boss.baseSpeed + elapsedMinutes * BALANCE.boss.speedPerMinute;
+  boss.damage = BALANCE.boss.baseDamage + elapsedMinutes * BALANCE.boss.damagePerMinute;
+  boss.score = BALANCE.boss.baseScore + elapsedMinutes * BALANCE.boss.scorePerMinute;
+  boss.xp = BALANCE.boss.baseXp + elapsedMinutes * BALANCE.boss.xpPerMinute;
   boss.color = "#862f1f";
   boss.hitColor = "#f38b62";
-  boss.bossSkillCooldown = 4.2;
-  boss.bossSummonCooldown = 7.4;
+  boss.bossSkillCooldown = BALANCE.boss.skillCooldown;
+  boss.bossSummonCooldown = BALANCE.boss.summonCooldown;
   return boss;
 }
 
@@ -568,32 +680,51 @@ function getEnemyTitle(enemy) {
 }
 
 function getSpawnProfile(elapsed) {
-  if (elapsed < 30) {
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const lerpWeights = (start, end, t) => ({
+    normal: lerp(start.normal, end.normal, t),
+    swift: lerp(start.swift, end.swift, t),
+    tank: lerp(start.tank, end.tank, t),
+  });
+
+  if (elapsed < BALANCE.spawn.earlyEnd) {
+    const t = elapsed / BALANCE.spawn.earlyEnd;
+    const early = BALANCE.spawn.early;
     return {
-      interval: 1.48 - (elapsed / 30) * 0.28,
-      weights: { normal: 0.96, swift: 0.04, tank: 0 },
-      extraSpawnChance: 0,
-      eliteChance: 0.01,
+      interval: lerp(early.intervalStart, early.intervalEnd, t),
+      weights: early.weights,
+      extraSpawnChance: lerp(early.extraSpawnStart, early.extraSpawnEnd, t),
+      eliteChance: lerp(early.eliteStart, early.eliteEnd, t),
     };
   }
 
-  if (elapsed < 60) {
-    const progress = (elapsed - 30) / 30;
+  if (elapsed < BALANCE.spawn.midEnd) {
+    const mid = BALANCE.spawn.mid;
+    const t = (elapsed - BALANCE.spawn.earlyEnd) / (BALANCE.spawn.midEnd - BALANCE.spawn.earlyEnd);
     return {
-      interval: 1.2 - progress * 0.2,
-      weights: { normal: 0.78, swift: 0.18, tank: 0.04 },
-      extraSpawnChance: 0.08 + progress * 0.08,
-      eliteChance: 0.03 + progress * 0.03,
+      interval: lerp(mid.intervalStart, mid.intervalEnd, t),
+      weights: lerpWeights(mid.weightsStart, mid.weightsEnd, t),
+      extraSpawnChance: lerp(mid.extraSpawnStart, mid.extraSpawnEnd, t),
+      eliteChance: lerp(mid.eliteStart, mid.eliteEnd, t),
     };
   }
 
-  const late = Math.min(1, (elapsed - 60) / 120);
+  const late = BALANCE.spawn.late;
+  const t = Math.min(1, (elapsed - BALANCE.spawn.midEnd) / BALANCE.spawn.lateRampDuration);
   return {
-    interval: 1.0 - late * 0.28,
-    weights: { normal: 0.56, swift: 0.27, tank: 0.17 },
-    extraSpawnChance: 0.2 + late * 0.16,
-    eliteChance: 0.07 + late * 0.06,
+    interval: lerp(late.intervalStart, late.intervalEnd, t),
+    weights: lerpWeights(late.weightsStart, late.weightsEnd, t),
+    extraSpawnChance: lerp(late.extraSpawnStart, late.extraSpawnEnd, t),
+    eliteChance: lerp(late.eliteStart, late.eliteEnd, t),
   };
+}
+
+function getEnemySpawnLimit() {
+  const minutes = gameState.elapsedTime / 60;
+  return Math.min(
+    BALANCE.spawn.maxEnemiesCap,
+    Math.floor(BALANCE.spawn.maxEnemiesBase + minutes * BALANCE.spawn.maxEnemiesPerMinute)
+  );
 }
 
 function chooseEnemyType(elapsed) {
@@ -660,7 +791,7 @@ function spawnBossIfNeeded() {
 
   const pos = findSafeSpawnPosition();
   gameState.enemies.push(createBoss(pos.x, pos.y));
-  gameState.nextBossTime += CONFIG.bossInterval;
+  gameState.nextBossTime += BALANCE.boss.interval;
 }
 
 function spawnDeathEffect(enemy) {
@@ -714,12 +845,12 @@ function spawnHealOrb(enemy, healValue = 18) {
 function tryDropHealOrb(enemy) {
   const player = gameState.player;
   const hpRatio = player.health / player.maxHealth;
-  const bonus = hpRatio < 0.5 ? (0.5 - hpRatio) * 0.7 : 0;
-  const baseChance = enemy.isElite ? 0.14 : 0.06;
+  const bonus = hpRatio < 0.5 ? (0.5 - hpRatio) * BALANCE.drops.lowHpBonusScale : 0;
+  const baseChance = enemy.isElite ? BALANCE.drops.healBaseChanceElite : BALANCE.drops.healBaseChanceNormal;
   const dropChance = baseChance + bonus;
 
   if (Math.random() < dropChance) {
-    spawnHealOrb(enemy, enemy.isElite ? 24 : 18);
+    spawnHealOrb(enemy, enemy.isElite ? BALANCE.drops.healElite : BALANCE.drops.healNormal);
   }
 }
 
@@ -750,9 +881,9 @@ function onEnemyKilled(enemy) {
   }
 
   if (enemy.isBoss) {
-    spawnXpOrb(enemy, 2.4);
-    spawnHealOrb(enemy, 50);
-    gameState.pendingLevelUps += 1;
+    spawnXpOrb(enemy, BALANCE.boss.killXpMultiplier);
+    spawnHealOrb(enemy, BALANCE.boss.killHeal);
+    gameState.pendingLevelUps += BALANCE.boss.bonusLevelUpsOnKill;
   }
 }
 
@@ -867,7 +998,7 @@ function runBossLogic(enemy, deltaTime) {
   enemy.bossSummonCooldown -= deltaTime;
 
   if (enemy.bossSkillCooldown <= 0) {
-    enemy.bossSkillCooldown = 4.3;
+    enemy.bossSkillCooldown = BALANCE.boss.skillCooldown;
     const player = gameState.player;
     const dx = player.x - enemy.x;
     const dy = player.y - enemy.y;
@@ -887,9 +1018,9 @@ function runBossLogic(enemy, deltaTime) {
   }
 
   if (enemy.bossSummonCooldown <= 0) {
-    enemy.bossSummonCooldown = 8.4;
+    enemy.bossSummonCooldown = BALANCE.boss.summonCooldown;
     spawnEnemy("normal");
-    if (gameState.elapsedTime > 90) {
+    if (gameState.elapsedTime > BALANCE.spawn.midEnd) {
       spawnEnemy("swift");
     }
   }
@@ -1022,7 +1153,20 @@ function updateDropOrbs(deltaTime) {
 }
 
 function getRandomUpgradeChoices(count) {
-  const entries = Object.values(UPGRADE_DEFINITIONS);
+  let entries = Object.values(UPGRADE_DEFINITIONS);
+  const player = gameState.player;
+
+  // Soft cap filtering keeps late-game choices meaningful and avoids runaway builds.
+  if (player.stats.lifesteal >= BALANCE.upgrades.lifestealCap * 0.9) {
+    entries = entries.filter((entry) => entry.id !== "lifesteal");
+  }
+  if (player.stats.critChance >= BALANCE.upgrades.critChanceCap * 0.9) {
+    entries = entries.filter((entry) => entry.id !== "crit");
+  }
+  if (getAttackCooldown() <= CONFIG.attackCooldownFloor + 0.02) {
+    entries = entries.filter((entry) => entry.id !== "attackCooldown");
+  }
+
   const base = shuffleArray(entries.filter((entry) => entry.category === "base"));
   const special = shuffleArray(entries.filter((entry) => entry.category === "special"));
 
@@ -1212,11 +1356,15 @@ function updateAutoAttack() {
 function updateSpawning(deltaTime) {
   const profile = getSpawnProfile(gameState.elapsedTime);
   gameState.spawnTimer += deltaTime;
+  const enemyLimit = getEnemySpawnLimit();
 
   while (gameState.spawnTimer >= profile.interval) {
     gameState.spawnTimer -= profile.interval;
+    if (gameState.enemies.length >= enemyLimit) {
+      continue;
+    }
     spawnEnemy();
-    if (Math.random() < profile.extraSpawnChance) {
+    if (Math.random() < profile.extraSpawnChance && gameState.enemies.length < enemyLimit) {
       spawnEnemy();
     }
   }
@@ -1428,6 +1576,51 @@ function drawEffects() {
   }
 }
 
+function drawDebugOverlay() {
+  if (!gameState?.debugEnabled) return;
+
+  const player = gameState.player;
+  const bosses = gameState.enemies.filter((enemy) => enemy.isBoss);
+  const elites = gameState.enemies.filter((enemy) => enemy.isElite && !enemy.isBoss);
+  const eliteAffixCount = { rage: 0, armor: 0, burst: 0, leech: 0 };
+  for (const elite of elites) {
+    if (eliteAffixCount[elite.eliteAffix] !== undefined) {
+      eliteAffixCount[elite.eliteAffix] += 1;
+    }
+  }
+
+  const lines = [
+    `DEBUG (F3)`,
+    `Phase: ${getPhaseLabel(gameState.elapsedTime)}  Time: ${formatTime(gameState.elapsedTime)}`,
+    `Enemies: ${gameState.enemies.length}/${getEnemySpawnLimit()}  SpawnInt: ${getSpawnProfile(gameState.elapsedTime).interval.toFixed(2)}s`,
+    `ATK ${getAttackDamage().toFixed(1)}  CD ${getAttackCooldown().toFixed(2)}  RNG ${getAttackRange().toFixed(0)}`,
+    `Move ${getMoveSpeed().toFixed(0)}  Regen ${player.stats.regenPerSec.toFixed(1)}  LS ${(player.stats.lifesteal * 100).toFixed(1)}%`,
+    `Crit ${(player.stats.critChance * 100).toFixed(1)}%  Pierce ${player.stats.pierce}  KB x${player.stats.knockbackMultiplier.toFixed(2)}`,
+    `Boss: ${bosses.length > 0 ? `${Math.ceil(bosses[0].health)}/${Math.ceil(bosses[0].maxHealth)}` : "none"}  NextBoss @ ${Math.ceil(gameState.nextBossTime)}s`,
+    `Elite: ${elites.length} (狂暴 ${eliteAffixCount.rage}, 厚甲 ${eliteAffixCount.armor}, 爆裂 ${eliteAffixCount.burst}, 吸血 ${eliteAffixCount.leech})`,
+  ];
+
+  const x = 10;
+  const y = 10;
+  const lineHeight = 16;
+  const width = 420;
+  const height = lines.length * lineHeight + 12;
+  ctx.save();
+  ctx.fillStyle = "rgba(4, 8, 7, 0.68)";
+  ctx.fillRect(x, y, width, height);
+  ctx.strokeStyle = "rgba(174, 223, 196, 0.35)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, width, height);
+  ctx.fillStyle = "#d8efe3";
+  ctx.font = "12px monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  for (let i = 0; i < lines.length; i += 1) {
+    ctx.fillText(lines[i], x + 8, y + 6 + i * lineHeight);
+  }
+  ctx.restore();
+}
+
 function drawGame() {
   ctx.clearRect(0, 0, WORLD.width, WORLD.height);
   drawBackgroundDetails();
@@ -1437,6 +1630,7 @@ function drawGame() {
   drawOrbs();
   drawEffects();
   drawPlayer(gameState.player);
+  drawDebugOverlay();
 }
 
 function updateJoystickFromPointer(clientX, clientY) {
@@ -1574,6 +1768,14 @@ function setMovementKey(code, isPressed) {
 }
 
 window.addEventListener("keydown", (event) => {
+  if (event.code === "F3") {
+    event.preventDefault();
+    if (gameState) {
+      gameState.debugEnabled = !gameState.debugEnabled;
+    }
+    return;
+  }
+
   if (["KeyW", "KeyA", "KeyS", "KeyD", "Space"].includes(event.code)) {
     event.preventDefault();
   }
