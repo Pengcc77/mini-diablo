@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>QR Code Generator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="game-shell">
+    <section class="utility-panel">
+      <div class="utility-copy">
+        <span class="hud-label">Standalone Tool</span>
+        <h2>QR Code Generator</h2>
+        <p>Paste any public game URL and generate a QR Code directly in the browser.</p>
+        <p><a class="utility-link" href="index.html">Back To Game</a></p>
+      </div>
+
+      <div class="qr-tool">
+        <label class="sr-only" for="qrUrlInput">Game URL</label>
+        <div class="qr-toolbar">
+          <input
+            id="qrUrlInput"
+            class="qr-input"
+            type="url"
+            value="https://your-username.github.io/your-repo-name/"
+            placeholder="https://your-username.github.io/your-repo-name/"
+          >
+          <button id="generateQrButton" type="button">Generate QR</button>
+        </div>
+
+        <div class="qr-preview">
+          <canvas id="qrCanvas" width="240" height="240" aria-label="QR Code preview"></canvas>
+          <div class="qr-preview-copy">
+            <p id="qrStatus">Enter a URL and generate a QR Code.</p>
+            <a id="downloadQrLink" class="download-link hidden" href="#" download="qrcode.png">Download PNG</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
+  <script>
+    const qrUrlInput = document.getElementById("qrUrlInput");
+    const generateQrButton = document.getElementById("generateQrButton");
+    const qrCanvas = document.getElementById("qrCanvas");
+    const qrStatus = document.getElementById("qrStatus");
+    const downloadQrLink = document.getElementById("downloadQrLink");
+    let qrInstance = null;
+
+    function updateQrDownloadLink() {
+      downloadQrLink.href = qrCanvas.toDataURL("image/png");
+      downloadQrLink.classList.remove("hidden");
+    }
+
+    // This page is intentionally standalone so it can be uploaded to GitHub Pages
+    // and used without any backend services.
+    function renderQrCode(value) {
+      const trimmedValue = value.trim();
+
+      if (!trimmedValue) {
+        qrStatus.textContent = "Please paste a URL before generating a QR Code.";
+        downloadQrLink.classList.add("hidden");
+        return;
+      }
+
+      if (!window.QRious) {
+        qrStatus.textContent = "QR library failed to load. Check your network and try again.";
+        downloadQrLink.classList.add("hidden");
+        return;
+      }
+
+      if (!qrInstance) {
+        qrInstance = new window.QRious({
+          element: qrCanvas,
+          value: trimmedValue,
+          size: 240,
+          background: "white",
+          foreground: "black",
+          level: "M",
+          padding: 16,
+        });
+      } else {
+        qrInstance.value = trimmedValue;
+      }
+
+      qrStatus.textContent = `QR Code ready for: ${trimmedValue}`;
+      updateQrDownloadLink();
+    }
+
+    generateQrButton.addEventListener("click", () => {
+      renderQrCode(qrUrlInput.value);
+    });
+
+    qrUrlInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        renderQrCode(qrUrlInput.value);
+      }
+    });
+
+    renderQrCode(qrUrlInput.value);
+  </script>
+</body>
+</html>
