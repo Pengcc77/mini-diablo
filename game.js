@@ -7,7 +7,6 @@ const arenaFrame = document.getElementById("arenaFrame");
 const joystickArea = document.getElementById("joystickArea");
 const joystickBase = document.getElementById("joystickBase");
 const joystickThumb = document.getElementById("joystickThumb");
-const attackButton = document.getElementById("attackButton");
 const mobileHint = document.getElementById("mobileHint");
 
 const gameHud = document.getElementById("gameHud");
@@ -280,7 +279,6 @@ const input = {
 
 const touchState = {
   joystickPointerId: null,
-  skillPointerId: null,
 };
 
 let gameState;
@@ -761,11 +759,8 @@ function resetTouchControls() {
   input.joystickX = 0;
   input.joystickY = 0;
   joystickBase.classList.remove("is-active");
-  attackButton.classList.remove("is-active");
-  attackButton.classList.remove("is-pressed");
   joystickThumb.style.transform = "translate(-50%, -50%)";
   touchState.joystickPointerId = null;
-  touchState.skillPointerId = null;
 }
 
 function showMobileHint() {
@@ -883,6 +878,31 @@ function runBossLogic(enemy, deltaTime) {
   }
 }
 
+// Keep player/enemy from overlapping into the same position.
+// We only push the enemy out to preserve player control feel.
+function resolvePlayerEnemyOverlap(player, enemy) {
+  const minDistance = player.radius + enemy.radius;
+  let dx = enemy.x - player.x;
+  let dy = enemy.y - player.y;
+  let dist = Math.hypot(dx, dy);
+
+  if (dist >= minDistance) return;
+
+  if (dist < 0.0001) {
+    dx = enemy.knockbackX || player.moveX || 1;
+    dy = enemy.knockbackY || player.moveY || 0;
+    dist = Math.hypot(dx, dy) || 1;
+  }
+
+  const nx = dx / dist;
+  const ny = dy / dist;
+  const separation = minDistance - dist + 0.1;
+  enemy.x += nx * separation;
+  enemy.y += ny * separation;
+  enemy.x = clamp(enemy.x, enemy.radius, WORLD.width - enemy.radius);
+  enemy.y = clamp(enemy.y, enemy.radius, WORLD.height - enemy.radius);
+}
+
 function updateEnemies(deltaTime) {
   const player = gameState.player;
 
@@ -901,6 +921,7 @@ function updateEnemies(deltaTime) {
     enemy.y += ((dy / len) * enemy.speed + enemy.knockbackY) * deltaTime;
     enemy.x = clamp(enemy.x, enemy.radius, WORLD.width - enemy.radius);
     enemy.y = clamp(enemy.y, enemy.radius, WORLD.height - enemy.radius);
+    resolvePlayerEnemyOverlap(player, enemy);
 
     const touching = distanceBetween(enemy, player) < enemy.radius + player.radius;
     if (touching && player.damageCooldownTimer <= 0) {
@@ -1435,25 +1456,6 @@ function setupTouchControls() {
   joystickArea.addEventListener("pointerup", endJoystickPointer);
   joystickArea.addEventListener("pointercancel", endJoystickPointer);
   joystickArea.addEventListener("lostpointercapture", releaseJoystick);
-
-  attackButton.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    touchState.skillPointerId = event.pointerId;
-    attackButton.classList.add("is-active");
-    attackButton.classList.add("is-pressed");
-    tryDash();
-  });
-
-  const releaseSkillPointer = (event) => {
-    if (touchState.skillPointerId !== null && event.pointerId !== touchState.skillPointerId) return;
-    event.preventDefault();
-    touchState.skillPointerId = null;
-    attackButton.classList.remove("is-active");
-    attackButton.classList.remove("is-pressed");
-  };
-
-  attackButton.addEventListener("pointerup", releaseSkillPointer);
-  attackButton.addEventListener("pointercancel", releaseSkillPointer);
 
   arenaFrame.addEventListener(
     "touchmove",

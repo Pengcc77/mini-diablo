@@ -191,7 +191,8 @@ canvas {
 
 .joystick-area {
   position: absolute;
-  left: 14px;
+  left: 50%;
+  transform: translateX(-50%);
   bottom: 14px;
   width: 102px;
   height: 102px;
@@ -548,7 +549,8 @@ button:active {
   }
 
   .joystick-area {
-    left: 8px;
+    left: 50%;
+    transform: translateX(-50%);
     bottom: calc(var(--safe-bottom) + 6px);
     width: 96px;
     height: 96px;
