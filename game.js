@@ -1635,15 +1635,25 @@ function drawPlayer(player) {
     ctx.stroke();
   }
 
-  if (player.damageCooldownTimer > 0) {
-    const flicker = Math.floor(player.damageCooldownTimer * 20) % 2 === 0;
-    ctx.globalAlpha = flicker ? 0.36 : 1;
+  // Accessibility tweak:
+  // Replace high-frequency flicker with a stable hurt tint to reduce eye strain.
+  const isHurtInvulnerable = player.damageCooldownTimer > 0;
+  if (isHurtInvulnerable) {
+    ctx.globalAlpha = 0.95;
   }
 
-  ctx.fillStyle = player.damageCooldownTimer > 0 ? "#f1b1a4" : "#d7e8d0";
+  ctx.fillStyle = isHurtInvulnerable ? "#f1b1a4" : "#d7e8d0";
   ctx.beginPath();
   ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
   ctx.fill();
+
+  if (isHurtInvulnerable) {
+    ctx.strokeStyle = "rgba(246, 138, 121, 0.8)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.radius + 3, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   ctx.strokeStyle = "#293728";
   ctx.lineWidth = 3;
