@@ -1086,9 +1086,23 @@ function updateAutoAttack() {
 
   const dx = nearest.x - player.x;
   const dy = nearest.y - player.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const faceX = dx / len;
-  const faceY = dy / len;
+  // When target overlaps player, fallback to current facing so attack direction stays stable.
+  // This avoids zero-vector direction causing inconsistent near-zero angle checks.
+  let faceX = dx;
+  let faceY = dy;
+  let len = Math.hypot(faceX, faceY);
+  if (len < 0.0001) {
+    faceX = player.moveX;
+    faceY = player.moveY;
+    len = Math.hypot(faceX, faceY);
+    if (len < 0.0001) {
+      faceX = 1;
+      faceY = 0;
+      len = 1;
+    }
+  }
+  faceX /= len;
+  faceY /= len;
   player.moveX = faceX;
   player.moveY = faceY;
 
@@ -1119,9 +1133,16 @@ function updateAutoAttack() {
     const dist = Math.hypot(ex, ey);
     if (dist > attackRange + enemy.radius) continue;
 
-    const enemyAngle = Math.atan2(ey, ex);
-    const delta = Math.atan2(Math.sin(enemyAngle - attackAngle), Math.cos(enemyAngle - attackAngle));
-    if (Math.abs(delta) > CONFIG.attackArc / 2) continue;
+    // Important close-range fix:
+    // If enemy overlaps player's body, always allow hit regardless of facing arc.
+    // This prevents "touching but cannot hit" cases on mobile/auto-target edge conditions.
+    const overlapDistance = player.radius + enemy.radius;
+    const isOverlapping = dist <= overlapDistance;
+    if (!isOverlapping) {
+      const enemyAngle = Math.atan2(ey, ex);
+      const delta = Math.atan2(Math.sin(enemyAngle - attackAngle), Math.cos(enemyAngle - attackAngle));
+      if (Math.abs(delta) > CONFIG.attackArc / 2) continue;
+    }
 
     enemy.health -= damage;
     totalDealt += damage;
