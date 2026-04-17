@@ -23,6 +23,8 @@ const finalLevel = document.getElementById("finalLevel");
 const finalScore = document.getElementById("finalScore");
 const finalTime = document.getElementById("finalTime");
 const finalKills = document.getElementById("finalKills");
+const finalBuild = document.getElementById("finalBuild");
+const finalUpgrades = document.getElementById("finalUpgrades");
 const gameOverPanel = document.getElementById("gameOverPanel");
 const levelUpPanel = document.getElementById("levelUpPanel");
 const upgradeOptions = document.getElementById("upgradeOptions");
@@ -42,6 +44,10 @@ const CONFIG = {
   baseAttackRange: 80,
   attackArc: Math.PI * 0.82,
   baseKnockbackForce: 150,
+  baseCritChance: 0,
+  baseCritMultiplier: 1.8,
+  basePierce: 1,
+  baseXpMagnetRadius: 130,
   enemyHitFlashDuration: 0.15,
   playerInvulnerabilityDuration: 1.1,
   openingProtectionDuration: 4.2,
@@ -49,7 +55,6 @@ const CONFIG = {
   particleDuration: 0.3,
   xpOrbLife: 14,
   healOrbLife: 12,
-  xpOrbMagnetRadius: 130,
   pickupRadius: 24,
   orbSpeed: 240,
   dashDistance: 108,
@@ -57,9 +62,9 @@ const CONFIG = {
   dashInvulnerability: 0.35,
   spawnSafeDistance: 210,
   joystickMaxDistance: 34,
+  bossInterval: 60,
 };
 
-// Enemy definition data is centralized for easy extension with elites/bosses.
 const ENEMY_TYPES = {
   normal: {
     id: "normal",
@@ -96,69 +101,173 @@ const ENEMY_TYPES = {
   },
 };
 
-// Upgrade definitions are centralized for future skill/equipment expansion.
-const UPGRADE_DEFINITIONS = {
-  attackDamage: {
-    id: "attackDamage",
-    title: "Attack Up",
-    description: "Auto attack damage +6.",
-    apply(player) {
-      player.stats.attackDamage += 6;
+// Elite affixes add combat variety and should be easy to expand later.
+const ELITE_AFFIXES = {
+  rage: {
+    id: "rage",
+    name: "狂暴",
+    apply(enemy) {
+      enemy.speed *= 1.35;
+      enemy.damage *= 1.2;
+      enemy.color = "#cc4d28";
     },
   },
-  attackCooldown: {
-    id: "attackCooldown",
-    title: "Attack Speed",
-    description: "Auto attack cooldown -0.08 sec.",
-    apply(player) {
-      player.stats.attackCooldown = Math.max(
-        CONFIG.attackCooldownFloor,
-        player.stats.attackCooldown - 0.08
-      );
+  armor: {
+    id: "armor",
+    name: "厚甲",
+    apply(enemy) {
+      enemy.maxHealth *= 1.75;
+      enemy.health = enemy.maxHealth;
+      enemy.color = "#4f6aa3";
     },
   },
-  attackRange: {
-    id: "attackRange",
-    title: "Range Up",
-    description: "Attack range +14.",
-    apply(player) {
-      player.stats.attackRange += 14;
+  burst: {
+    id: "burst",
+    name: "爆裂",
+    apply(enemy) {
+      enemy.onDeathBurst = true;
+      enemy.color = "#c95d38";
     },
   },
-  maxHealth: {
-    id: "maxHealth",
-    title: "Vitality",
-    description: "Max HP +24 and heal +24.",
-    apply(player) {
-      player.maxHealth += 24;
-      player.health = Math.min(player.maxHealth, player.health + 24);
-    },
-  },
-  moveSpeed: {
-    id: "moveSpeed",
-    title: "Quick Step",
-    description: "Move speed +22.",
-    apply(player) {
-      player.stats.moveSpeed += 22;
-    },
-  },
-  regen: {
-    id: "regen",
-    title: "Auto Heal",
-    description: "Regenerate +1.2 HP/sec.",
-    apply(player) {
-      player.stats.regenPerSec += 1.2;
-    },
-  },
-  knockback: {
-    id: "knockback",
-    title: "Heavy Blow",
-    description: "Knockback force +25%.",
-    apply(player) {
-      player.stats.knockbackMultiplier += 0.25;
+  leech: {
+    id: "leech",
+    name: "吸血",
+    apply(enemy) {
+      enemy.lifeStealRatio = 0.32;
+      enemy.color = "#8f355f";
     },
   },
 };
+
+function createUpgradeDefinitions() {
+  // Display text and actual effect are bound in one place to avoid mismatch.
+  return {
+    attackDamage: {
+      id: "attackDamage",
+      category: "base",
+      title: "攻擊強化",
+      description: "攻擊傷害 +20%",
+      summary: "攻擊傷害",
+      apply(player) {
+        player.stats.attackDamageMultiplier *= 1.2;
+      },
+      buildTag: "damage",
+    },
+    attackCooldown: {
+      id: "attackCooldown",
+      category: "base",
+      title: "攻速提升",
+      description: "攻擊間隔 -15%",
+      summary: "攻擊速度",
+      apply(player) {
+        player.stats.attackCooldownMultiplier *= 0.85;
+      },
+      buildTag: "speed",
+    },
+    attackRange: {
+      id: "attackRange",
+      category: "base",
+      title: "攻擊範圍提升",
+      description: "攻擊距離 +15%",
+      summary: "攻擊範圍",
+      apply(player) {
+        player.stats.attackRangeMultiplier *= 1.15;
+      },
+      buildTag: "control",
+    },
+    maxHealth: {
+      id: "maxHealth",
+      category: "base",
+      title: "生命上限提升",
+      description: "最大生命 +25",
+      summary: "生命上限",
+      apply(player) {
+        player.maxHealth += 25;
+        player.health = Math.min(player.maxHealth, player.health + 25);
+      },
+      buildTag: "tank",
+    },
+    moveSpeed: {
+      id: "moveSpeed",
+      category: "base",
+      title: "移動速度提升",
+      description: "移動速度 +10%",
+      summary: "移動速度",
+      apply(player) {
+        player.stats.moveSpeedMultiplier *= 1.1;
+      },
+      buildTag: "speed",
+    },
+    regen: {
+      id: "regen",
+      category: "base",
+      title: "自動回血",
+      description: "每秒恢復 2 點生命",
+      summary: "自動回血",
+      apply(player) {
+        player.stats.regenPerSec += 2;
+      },
+      buildTag: "sustain",
+    },
+    knockback: {
+      id: "knockback",
+      category: "base",
+      title: "擊退強化",
+      description: "擊退距離 +25%",
+      summary: "擊退強化",
+      apply(player) {
+        player.stats.knockbackMultiplier *= 1.25;
+      },
+      buildTag: "control",
+    },
+    crit: {
+      id: "crit",
+      category: "special",
+      title: "暴擊強化",
+      description: "暴擊率 +8%",
+      summary: "暴擊率",
+      apply(player) {
+        player.stats.critChance += 0.08;
+      },
+      buildTag: "damage",
+    },
+    pierce: {
+      id: "pierce",
+      category: "special",
+      title: "穿透攻擊",
+      description: "可額外命中 +1",
+      summary: "穿透命中",
+      apply(player) {
+        player.stats.pierce += 1;
+      },
+      buildTag: "damage",
+    },
+    xpMagnet: {
+      id: "xpMagnet",
+      category: "special",
+      title: "經驗吸附",
+      description: "吸收範圍 +25%",
+      summary: "吸附範圍",
+      apply(player) {
+        player.stats.xpMagnetMultiplier *= 1.25;
+      },
+      buildTag: "utility",
+    },
+    lifesteal: {
+      id: "lifesteal",
+      category: "special",
+      title: "吸血打擊",
+      description: "命中吸血 +2%",
+      summary: "命中吸血",
+      apply(player) {
+        player.stats.lifesteal += 0.02;
+      },
+      buildTag: "sustain",
+    },
+  };
+}
+
+const UPGRADE_DEFINITIONS = createUpgradeDefinitions();
 
 const input = {
   up: false,
@@ -218,6 +327,30 @@ function getXpRequirement(level) {
   return Math.floor(26 * Math.pow(1.33, level - 3));
 }
 
+function getBuildSummaryTags(buildCounters) {
+  const candidates = [
+    { key: "speed", name: "高攻速流" },
+    { key: "tank", name: "高生命流" },
+    { key: "control", name: "擊退控制流" },
+    { key: "sustain", name: "吸血生存流" },
+    { key: "damage", name: "暴擊輸出流" },
+    { key: "utility", name: "成長吸附流" },
+  ];
+  let best = candidates[0];
+  let bestValue = -1;
+
+  for (const option of candidates) {
+    const value = buildCounters[option.key] || 0;
+    if (value > bestValue) {
+      best = option;
+      bestValue = value;
+    }
+  }
+
+  if (bestValue <= 0) return "平衡流";
+  return best.name;
+}
+
 function createPlayer() {
   return {
     x: WORLD.width / 2,
@@ -235,12 +368,17 @@ function createPlayer() {
     experience: 0,
     experienceToNextLevel: getXpRequirement(1),
     stats: {
-      attackDamage: CONFIG.baseAttackDamage,
-      attackCooldown: CONFIG.baseAttackCooldown,
-      attackRange: CONFIG.baseAttackRange,
-      moveSpeed: CONFIG.basePlayerSpeed,
+      attackDamageMultiplier: 1,
+      attackCooldownMultiplier: 1,
+      attackRangeMultiplier: 1,
+      moveSpeedMultiplier: 1,
       regenPerSec: 0,
       knockbackMultiplier: 1,
+      critChance: CONFIG.baseCritChance,
+      critMultiplier: CONFIG.baseCritMultiplier,
+      pierce: CONFIG.basePierce,
+      xpMagnetMultiplier: 1,
+      lifesteal: 0,
     },
   };
 }
@@ -256,14 +394,46 @@ function createInitialState() {
     kills: 0,
     elapsedTime: 0,
     spawnTimer: 0,
+    nextBossTime: CONFIG.bossInterval,
     isGameOver: false,
     isLevelUpPaused: false,
     pendingLevelUps: 0,
     currentUpgradeOptions: [],
+    upgradeHistory: [],
+    buildCounters: {
+      damage: 0,
+      speed: 0,
+      control: 0,
+      tank: 0,
+      sustain: 0,
+      utility: 0,
+    },
   };
 }
 
-// Canvas resize keeps desktop ratio and gives mobile a taller gameplay window.
+function getPlayerMoveSpeed() {
+  return CONFIG.basePlayerSpeed * gameState.player.stats.moveSpeedMultiplier;
+}
+
+function getPlayerAttackDamage() {
+  return CONFIG.baseAttackDamage * gameState.player.stats.attackDamageMultiplier;
+}
+
+function getPlayerAttackCooldown() {
+  return Math.max(
+    CONFIG.attackCooldownFloor,
+    CONFIG.baseAttackCooldown * gameState.player.stats.attackCooldownMultiplier
+  );
+}
+
+function getPlayerAttackRange() {
+  return CONFIG.baseAttackRange * gameState.player.stats.attackRangeMultiplier;
+}
+
+function getPlayerXpMagnetRadius() {
+  return CONFIG.baseXpMagnetRadius * gameState.player.stats.xpMagnetMultiplier;
+}
+
 function resizeCanvas() {
   const previousWidth = WORLD.width;
   const previousHeight = WORLD.height;
@@ -339,7 +509,47 @@ function createEnemy(typeId, x, y) {
     hitFlashTimer: 0,
     knockbackX: 0,
     knockbackY: 0,
+    isElite: false,
+    eliteAffix: null,
+    onDeathBurst: false,
+    lifeStealRatio: 0,
+    isBoss: false,
+    bossSkillCooldown: 0,
+    bossSummonCooldown: 0,
   };
+}
+
+function applyEliteAffix(enemy, affixId) {
+  const affix = ELITE_AFFIXES[affixId];
+  if (!affix) return;
+
+  affix.apply(enemy);
+  enemy.isElite = true;
+  enemy.eliteAffix = affixId;
+  enemy.maxHealth *= 1.35;
+  enemy.health = enemy.maxHealth;
+  enemy.score *= 2.2;
+  enemy.xp *= 2;
+  enemy.radius *= 1.16;
+}
+
+function createBoss(x, y) {
+  const elapsedMinutes = Math.floor(gameState.elapsedTime / 60);
+  const scale = 1 + elapsedMinutes * 0.18;
+  const boss = createEnemy("tank", x, y);
+  boss.isBoss = true;
+  boss.radius = 30;
+  boss.maxHealth = 520 * scale;
+  boss.health = boss.maxHealth;
+  boss.speed = 72 + elapsedMinutes * 4;
+  boss.damage = 22 + elapsedMinutes * 2;
+  boss.score = 280 + elapsedMinutes * 50;
+  boss.xp = 170 + elapsedMinutes * 35;
+  boss.color = "#862f1f";
+  boss.hitColor = "#f38b62";
+  boss.bossSkillCooldown = 4.2;
+  boss.bossSummonCooldown = 7.4;
+  return boss;
 }
 
 function getSpawnProfile(elapsed) {
@@ -348,6 +558,7 @@ function getSpawnProfile(elapsed) {
       interval: 1.48 - (elapsed / 30) * 0.28,
       weights: { normal: 0.96, swift: 0.04, tank: 0 },
       extraSpawnChance: 0,
+      eliteChance: 0.01,
     };
   }
 
@@ -357,6 +568,7 @@ function getSpawnProfile(elapsed) {
       interval: 1.2 - progress * 0.2,
       weights: { normal: 0.78, swift: 0.18, tank: 0.04 },
       extraSpawnChance: 0.08 + progress * 0.08,
+      eliteChance: 0.03 + progress * 0.03,
     };
   }
 
@@ -365,6 +577,7 @@ function getSpawnProfile(elapsed) {
     interval: 1.0 - late * 0.28,
     weights: { normal: 0.56, swift: 0.27, tank: 0.17 },
     extraSpawnChance: 0.2 + late * 0.16,
+    eliteChance: 0.07 + late * 0.06,
   };
 }
 
@@ -384,11 +597,11 @@ function chooseEnemyType(elapsed) {
 function findSafeSpawnPosition() {
   const margin = 42;
   const player = gameState.player;
-  const side = Math.floor(Math.random() * 4);
   let x = 0;
   let y = 0;
 
-  for (let i = 0; i < 16; i += 1) {
+  for (let i = 0; i < 18; i += 1) {
+    const side = Math.floor(Math.random() * 4);
     if (side === 0) {
       x = randomRange(0, WORLD.width);
       y = -margin;
@@ -407,14 +620,32 @@ function findSafeSpawnPosition() {
       return { x, y };
     }
   }
-
   return { x, y };
 }
 
-function spawnEnemy() {
-  const typeId = chooseEnemyType(gameState.elapsedTime);
+function spawnEnemy(isForcedType = null) {
+  const typeId = isForcedType || chooseEnemyType(gameState.elapsedTime);
   const pos = findSafeSpawnPosition();
-  gameState.enemies.push(createEnemy(typeId, pos.x, pos.y));
+  const enemy = createEnemy(typeId, pos.x, pos.y);
+  const profile = getSpawnProfile(gameState.elapsedTime);
+
+  if (!enemy.isBoss && Math.random() < profile.eliteChance) {
+    const affixes = Object.keys(ELITE_AFFIXES);
+    const affixId = affixes[Math.floor(Math.random() * affixes.length)];
+    applyEliteAffix(enemy, affixId);
+  }
+
+  gameState.enemies.push(enemy);
+}
+
+function spawnBossIfNeeded() {
+  if (gameState.elapsedTime < gameState.nextBossTime) return;
+  const hasBossAlive = gameState.enemies.some((enemy) => enemy.isBoss);
+  if (hasBossAlive) return;
+
+  const pos = findSafeSpawnPosition();
+  gameState.enemies.push(createBoss(pos.x, pos.y));
+  gameState.nextBossTime += CONFIG.bossInterval;
 }
 
 function spawnDeathEffect(enemy) {
@@ -445,22 +676,22 @@ function spawnDeathEffect(enemy) {
   });
 }
 
-function spawnXpOrb(enemy) {
+function spawnXpOrb(enemy, multiplier = 1) {
   gameState.xpOrbs.push({
     x: enemy.x,
     y: enemy.y,
     radius: clamp(enemy.radius * 0.44, 6, 10),
-    value: enemy.xp,
+    value: enemy.xp * multiplier,
     life: CONFIG.xpOrbLife,
   });
 }
 
-function spawnHealOrb(enemy) {
+function spawnHealOrb(enemy, healValue = 18) {
   gameState.healOrbs.push({
     x: enemy.x,
     y: enemy.y,
     radius: 7,
-    heal: 18,
+    heal: healValue,
     life: CONFIG.healOrbLife,
   });
 }
@@ -469,10 +700,44 @@ function tryDropHealOrb(enemy) {
   const player = gameState.player;
   const hpRatio = player.health / player.maxHealth;
   const bonus = hpRatio < 0.5 ? (0.5 - hpRatio) * 0.7 : 0;
-  const dropChance = 0.06 + bonus;
+  const baseChance = enemy.isElite ? 0.14 : 0.06;
+  const dropChance = baseChance + bonus;
 
   if (Math.random() < dropChance) {
-    spawnHealOrb(enemy);
+    spawnHealOrb(enemy, enemy.isElite ? 24 : 18);
+  }
+}
+
+function onEnemyKilled(enemy) {
+  gameState.kills += 1;
+  gameState.score += enemy.score;
+  spawnDeathEffect(enemy);
+  spawnXpOrb(enemy);
+  tryDropHealOrb(enemy);
+
+  if (enemy.onDeathBurst) {
+    gameState.effects.push({
+      type: "shockwave",
+      x: enemy.x,
+      y: enemy.y,
+      radius: 110,
+      life: 0.18,
+      maxLife: 0.18,
+      color: "#ff9675",
+    });
+
+    const player = gameState.player;
+    const dist = Math.hypot(player.x - enemy.x, player.y - enemy.y);
+    if (dist < 110 && player.damageCooldownTimer <= 0) {
+      player.health = Math.max(0, player.health - 9);
+      player.damageCooldownTimer = CONFIG.playerInvulnerabilityDuration;
+    }
+  }
+
+  if (enemy.isBoss) {
+    spawnXpOrb(enemy, 2.4);
+    spawnHealOrb(enemy, 50);
+    gameState.pendingLevelUps += 1;
   }
 }
 
@@ -530,6 +795,29 @@ function resetGame() {
   showMobileHint();
 }
 
+function getMoveSpeed() {
+  return CONFIG.basePlayerSpeed * gameState.player.stats.moveSpeedMultiplier;
+}
+
+function getAttackDamage() {
+  return CONFIG.baseAttackDamage * gameState.player.stats.attackDamageMultiplier;
+}
+
+function getAttackCooldown() {
+  return Math.max(
+    CONFIG.attackCooldownFloor,
+    CONFIG.baseAttackCooldown * gameState.player.stats.attackCooldownMultiplier
+  );
+}
+
+function getAttackRange() {
+  return CONFIG.baseAttackRange * gameState.player.stats.attackRangeMultiplier;
+}
+
+function getXpMagnetRadius() {
+  return CONFIG.baseXpMagnetRadius * gameState.player.stats.xpMagnetMultiplier;
+}
+
 function updatePlayer(deltaTime) {
   const player = gameState.player;
   const keyboardX = (input.right ? 1 : 0) - (input.left ? 1 : 0);
@@ -545,8 +833,8 @@ function updatePlayer(deltaTime) {
     player.moveY = moveY;
   }
 
-  player.x += moveX * player.stats.moveSpeed * deltaTime;
-  player.y += moveY * player.stats.moveSpeed * deltaTime;
+  player.x += moveX * getMoveSpeed() * deltaTime;
+  player.y += moveY * getMoveSpeed() * deltaTime;
   player.x = clamp(player.x, player.radius, WORLD.width - player.radius);
   player.y = clamp(player.y, player.radius, WORLD.height - player.radius);
 
@@ -560,10 +848,47 @@ function updatePlayer(deltaTime) {
   player.dashCooldownTimer = Math.max(0, player.dashCooldownTimer - deltaTime);
 }
 
+function runBossLogic(enemy, deltaTime) {
+  if (!enemy.isBoss) return;
+
+  enemy.bossSkillCooldown -= deltaTime;
+  enemy.bossSummonCooldown -= deltaTime;
+
+  if (enemy.bossSkillCooldown <= 0) {
+    enemy.bossSkillCooldown = 4.3;
+    const player = gameState.player;
+    const dx = player.x - enemy.x;
+    const dy = player.y - enemy.y;
+    const len = Math.hypot(dx, dy) || 1;
+    enemy.knockbackX = (dx / len) * 340;
+    enemy.knockbackY = (dy / len) * 340;
+
+    gameState.effects.push({
+      type: "shockwave",
+      x: enemy.x,
+      y: enemy.y,
+      radius: 120,
+      life: 0.24,
+      maxLife: 0.24,
+      color: "#f38b62",
+    });
+  }
+
+  if (enemy.bossSummonCooldown <= 0) {
+    enemy.bossSummonCooldown = 8.4;
+    spawnEnemy("normal");
+    if (gameState.elapsedTime > 90) {
+      spawnEnemy("swift");
+    }
+  }
+}
+
 function updateEnemies(deltaTime) {
   const player = gameState.player;
 
   for (const enemy of gameState.enemies) {
+    runBossLogic(enemy, deltaTime);
+
     const dx = player.x - enemy.x;
     const dy = player.y - enemy.y;
     const len = Math.hypot(dx, dy) || 1;
@@ -581,6 +906,9 @@ function updateEnemies(deltaTime) {
     if (touching && player.damageCooldownTimer <= 0) {
       player.health = Math.max(0, player.health - enemy.damage);
       player.damageCooldownTimer = CONFIG.playerInvulnerabilityDuration;
+      if (enemy.lifeStealRatio > 0) {
+        enemy.health = Math.min(enemy.maxHealth, enemy.health + enemy.damage * enemy.lifeStealRatio);
+      }
     }
   }
 }
@@ -616,6 +944,7 @@ function gainExperience(amount) {
 
 function updateDropOrbs(deltaTime) {
   const player = gameState.player;
+  const magnetRadius = getXpMagnetRadius();
 
   gameState.xpOrbs = gameState.xpOrbs.filter((orb) => {
     orb.life -= deltaTime;
@@ -623,7 +952,7 @@ function updateDropOrbs(deltaTime) {
     const dy = player.y - orb.y;
     const dist = Math.hypot(dx, dy) || 1;
 
-    if (dist < CONFIG.xpOrbMagnetRadius) {
+    if (dist < magnetRadius) {
       orb.x += (dx / dist) * CONFIG.orbSpeed * deltaTime;
       orb.y += (dy / dist) * CONFIG.orbSpeed * deltaTime;
     }
@@ -632,7 +961,6 @@ function updateDropOrbs(deltaTime) {
       gainExperience(orb.value);
       return false;
     }
-
     return orb.life > 0;
   });
 
@@ -642,7 +970,7 @@ function updateDropOrbs(deltaTime) {
     const dy = player.y - orb.y;
     const dist = Math.hypot(dx, dy) || 1;
 
-    if (dist < CONFIG.xpOrbMagnetRadius * 0.84) {
+    if (dist < magnetRadius * 0.84) {
       orb.x += (dx / dist) * CONFIG.orbSpeed * 0.88 * deltaTime;
       orb.y += (dy / dist) * CONFIG.orbSpeed * 0.88 * deltaTime;
     }
@@ -651,13 +979,30 @@ function updateDropOrbs(deltaTime) {
       player.health = Math.min(player.maxHealth, player.health + orb.heal);
       return false;
     }
-
     return orb.life > 0;
   });
 }
 
 function getRandomUpgradeChoices(count) {
-  return shuffleArray(Object.values(UPGRADE_DEFINITIONS)).slice(0, count);
+  const entries = Object.values(UPGRADE_DEFINITIONS);
+  const base = shuffleArray(entries.filter((entry) => entry.category === "base"));
+  const special = shuffleArray(entries.filter((entry) => entry.category === "special"));
+
+  // Always offer at least one special option after first minute to strengthen build identity.
+  const picks = [];
+  if (gameState.elapsedTime > 45 && special.length > 0) {
+    picks.push(special.shift());
+  }
+
+  while (picks.length < count && base.length > 0) {
+    picks.push(base.shift());
+  }
+
+  while (picks.length < count && special.length > 0) {
+    picks.push(special.shift());
+  }
+
+  return shuffleArray(picks).slice(0, count);
 }
 
 function renderUpgradeOptions() {
@@ -697,6 +1042,9 @@ function applyUpgrade(upgradeId) {
   levelUpPanel.classList.add("hidden");
   upgradeOptions.innerHTML = "";
 
+  gameState.upgradeHistory.push(upgrade.summary);
+  gameState.buildCounters[upgrade.buildTag] += 1;
+
   if (gameState.pendingLevelUps > 0) {
     openLevelUpPanel();
   }
@@ -727,7 +1075,10 @@ function tryDash() {
   });
 }
 
-// Auto attack: lock nearest target, face toward it, attack when in range and cooldown ready.
+// Auto attack logic:
+// 1) lock nearest target
+// 2) face target
+// 3) attack when target is in range and cooldown finished
 function updateAutoAttack() {
   const player = gameState.player;
   const { nearest, distance } = getNearestEnemy();
@@ -741,40 +1092,62 @@ function updateAutoAttack() {
   player.moveX = faceX;
   player.moveY = faceY;
 
+  const attackRange = getAttackRange();
   if (player.attackCooldownTimer > 0) return;
-  if (distance > player.stats.attackRange + nearest.radius) return;
+  if (distance > attackRange + nearest.radius) return;
 
   player.attackTimer = CONFIG.attackDuration;
-  player.attackCooldownTimer = player.stats.attackCooldown;
+  player.attackCooldownTimer = getAttackCooldown();
   const attackAngle = Math.atan2(faceY, faceX);
+  const critRoll = Math.random() < player.stats.critChance;
+  const damageBase = getAttackDamage();
+  const damage = critRoll ? damageBase * player.stats.critMultiplier : damageBase;
+  let remainingHits = player.stats.pierce;
+  let totalDealt = 0;
 
-  gameState.enemies = gameState.enemies.filter((enemy) => {
+  // Sort by distance so piercing hits the closest enemies first.
+  const sortedTargets = [...gameState.enemies].sort(
+    (a, b) => distanceBetween(player, a) - distanceBetween(player, b)
+  );
+
+  const deadSet = new Set();
+  for (const enemy of sortedTargets) {
+    if (remainingHits <= 0) break;
+
     const ex = enemy.x - player.x;
     const ey = enemy.y - player.y;
     const dist = Math.hypot(ex, ey);
-    if (dist > player.stats.attackRange + enemy.radius) return true;
+    if (dist > attackRange + enemy.radius) continue;
 
     const enemyAngle = Math.atan2(ey, ex);
     const delta = Math.atan2(Math.sin(enemyAngle - attackAngle), Math.cos(enemyAngle - attackAngle));
-    if (Math.abs(delta) > CONFIG.attackArc / 2) return true;
+    if (Math.abs(delta) > CONFIG.attackArc / 2) continue;
 
-    enemy.health -= player.stats.attackDamage;
+    enemy.health -= damage;
+    totalDealt += damage;
     enemy.hitFlashTimer = CONFIG.enemyHitFlashDuration;
     const safe = dist || 1;
     const kb = CONFIG.baseKnockbackForce * player.stats.knockbackMultiplier;
     enemy.knockbackX = (ex / safe) * kb;
     enemy.knockbackY = (ey / safe) * kb;
+    remainingHits -= 1;
 
     if (enemy.health <= 0) {
-      gameState.kills += 1;
-      gameState.score += enemy.score;
-      spawnDeathEffect(enemy);
-      spawnXpOrb(enemy);
-      tryDropHealOrb(enemy);
-      return false;
+      deadSet.add(enemy);
     }
-    return true;
-  });
+  }
+
+  if (player.stats.lifesteal > 0 && totalDealt > 0) {
+    player.health = Math.min(player.maxHealth, player.health + totalDealt * player.stats.lifesteal);
+  }
+
+  if (deadSet.size > 0) {
+    gameState.enemies = gameState.enemies.filter((enemy) => {
+      if (!deadSet.has(enemy)) return true;
+      onEnemyKilled(enemy);
+      return false;
+    });
+  }
 }
 
 function updateSpawning(deltaTime) {
@@ -784,7 +1157,6 @@ function updateSpawning(deltaTime) {
   while (gameState.spawnTimer >= profile.interval) {
     gameState.spawnTimer -= profile.interval;
     spawnEnemy();
-
     if (Math.random() < profile.extraSpawnChance) {
       spawnEnemy();
     }
@@ -807,14 +1179,18 @@ function updateGame(deltaTime) {
   updateAutoAttack();
   updateDropOrbs(deltaTime);
   updateSpawning(deltaTime);
+  spawnBossIfNeeded();
   updateHud();
 
   if (gameState.player.health <= 0) {
     gameState.isGameOver = true;
-    finalLevel.textContent = `Level: ${gameState.player.level}`;
-    finalScore.textContent = `Score: ${gameState.score}`;
-    finalTime.textContent = `Survival: ${formatTime(gameState.elapsedTime)}`;
-    finalKills.textContent = `Kills: ${gameState.kills}`;
+    finalLevel.textContent = `等級：${gameState.player.level}`;
+    finalScore.textContent = `分數：${gameState.score}`;
+    finalTime.textContent = `存活：${formatTime(gameState.elapsedTime)}`;
+    finalKills.textContent = `擊殺：${gameState.kills}`;
+    finalBuild.textContent = `流派：${getBuildSummaryTags(gameState.buildCounters)}`;
+    const summary = gameState.upgradeHistory.slice(-5).join("、");
+    finalUpgrades.textContent = `主要強化：${summary || "-"}`;
     gameOverPanel.classList.remove("hidden");
   }
 }
@@ -850,7 +1226,6 @@ function drawBackgroundDetails() {
     ctx.lineTo(WORLD.width, y);
     ctx.stroke();
   }
-
   ctx.restore();
 }
 
@@ -860,13 +1235,14 @@ function drawPlayer(player) {
   if (player.attackTimer > 0) {
     const angle = Math.atan2(player.moveY, player.moveX);
     const progress = player.attackTimer / CONFIG.attackDuration;
+    const attackRange = getAttackRange();
     ctx.fillStyle = `rgba(239, 172, 77, ${0.12 + progress * 0.24})`;
     ctx.beginPath();
     ctx.moveTo(player.x, player.y);
     ctx.arc(
       player.x,
       player.y,
-      player.stats.attackRange,
+      attackRange,
       angle - CONFIG.attackArc / 2,
       angle + CONFIG.attackArc / 2
     );
@@ -908,11 +1284,19 @@ function drawEnemy(enemy) {
   ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
   ctx.fill();
 
+  if (enemy.isElite || enemy.isBoss) {
+    ctx.strokeStyle = enemy.isBoss ? "#ffd26c" : "#9be2ff";
+    ctx.lineWidth = enemy.isBoss ? 4 : 3;
+    ctx.beginPath();
+    ctx.arc(enemy.x, enemy.y, enemy.radius + 4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
   const barWidth = enemy.radius * 2.08;
   const ratio = enemy.health / enemy.maxHealth;
   ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
   ctx.fillRect(enemy.x - barWidth / 2, enemy.y - enemy.radius - 12, barWidth, 5);
-  ctx.fillStyle = "#9fcb74";
+  ctx.fillStyle = enemy.isBoss ? "#ffd26c" : "#9fcb74";
   ctx.fillRect(enemy.x - barWidth / 2, enemy.y - enemy.radius - 12, barWidth * ratio, 5);
   ctx.restore();
 }
@@ -957,6 +1341,12 @@ function drawEffects() {
       ctx.beginPath();
       ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
       ctx.fill();
+    } else if (fx.type === "shockwave") {
+      ctx.strokeStyle = fx.color;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(fx.x, fx.y, fx.radius * (1 - alpha * 0.35), 0, Math.PI * 2);
+      ctx.stroke();
     }
 
     ctx.restore();
@@ -966,11 +1356,9 @@ function drawEffects() {
 function drawGame() {
   ctx.clearRect(0, 0, WORLD.width, WORLD.height);
   drawBackgroundDetails();
-
   for (const enemy of gameState.enemies) {
     drawEnemy(enemy);
   }
-
   drawOrbs();
   drawEffects();
   drawPlayer(gameState.player);
@@ -1005,7 +1393,6 @@ function setupTouchControls() {
   joystickArea.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     if (touchState.joystickPointerId !== null) return;
-
     touchState.joystickPointerId = event.pointerId;
     joystickBase.classList.add("is-active");
     joystickArea.setPointerCapture(event.pointerId);
@@ -1037,9 +1424,7 @@ function setupTouchControls() {
   });
 
   const releaseSkillPointer = (event) => {
-    if (touchState.skillPointerId !== null && event.pointerId !== touchState.skillPointerId) {
-      return;
-    }
+    if (touchState.skillPointerId !== null && event.pointerId !== touchState.skillPointerId) return;
     event.preventDefault();
     touchState.skillPointerId = null;
     attackButton.classList.remove("is-active");
@@ -1080,7 +1465,6 @@ window.addEventListener("keydown", (event) => {
   }
 
   setMovementKey(event.code, true);
-
   if (event.code === "Space" && !event.repeat) {
     tryDash();
   }
@@ -1108,7 +1492,6 @@ function gameLoop(timestamp) {
 
   updateGame(deltaTime);
   drawGame();
-
   animationFrameId = window.requestAnimationFrame(gameLoop);
 }
 
